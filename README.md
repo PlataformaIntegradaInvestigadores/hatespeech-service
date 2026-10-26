@@ -87,12 +87,33 @@ El modelo **no** va en la imagen ni en el repositorio. En el host:
 ```
 ${MODELS_HOST_DIR}/
   qlora_qwen25_3b_es_ecu/      # adapter PEFT + tokenizer (salida del entrenamiento config 3)
-${HF_CACHE_HOST_DIR}/          # caché de Hugging Face con Qwen/Qwen2.5-3B-Instruct
+${BASE_MODEL_HOST_DIR}/
+  Qwen2.5-3B-Instruct/         # config, tokenizer y model-0000x-of-00002.safetensors
 ```
 
-`docker-compose.yml` monta `MODELS_HOST_DIR` en `/models` (solo lectura) y la caché en
-`/home/appuser/.cache/huggingface`. `BASE_MODEL` puede ser un id de Hugging Face (se descarga
-la primera vez en la caché) o una ruta local montada.
+`docker-compose.yml` monta `MODELS_HOST_DIR` en `/models` y `BASE_MODEL_HOST_DIR` en
+`/base-model`, ambos en solo lectura, y `BASE_MODEL=/base-model/Qwen2.5-3B-Instruct`. La imagen
+trae `HF_HUB_OFFLINE=1`: no descarga nada en el arranque.
+
+**Windows (Docker Desktop):** no montar directamente `snapshots/` de la caché de Hugging Face.
+Ahí los archivos son symlinks de Windows hacia `blobs/` y dentro del contenedor Linux los
+pesos aparecen como enlaces rotos. Copiar el snapshot con los archivos reales a
+`BASE_MODEL_HOST_DIR`, por ejemplo en PowerShell:
+
+```powershell
+$src = "$env:USERPROFILE\.cache\huggingface\hub\models--Qwen--Qwen2.5-3B-Instruct\snapshots\<hash>"
+$dst = ".\models\base\Qwen2.5-3B-Instruct"
+New-Item -ItemType Directory -Force $dst | Out-Null
+Get-ChildItem $src | ForEach-Object {
+  $t = @((Get-Item $_.FullName).Target)[0]
+  $real = if ($t) { [IO.Path]::GetFullPath((Join-Path $src $t)) } else { $_.FullName }
+  Copy-Item -LiteralPath $real -Destination (Join-Path $dst $_.Name)
+}
+```
+
+En Linux basta con apuntar `BASE_MODEL_HOST_DIR` al snapshot (Docker sigue los symlinks
+relativos) o usar `BASE_MODEL=Qwen/Qwen2.5-3B-Instruct` con la caché montada en
+`HF_CACHE_HOST_DIR`.
 
 Requisitos: GPU NVIDIA con soporte bf16 (Ampere o superior; estimado 4–6 GB de VRAM para el
 modelo en 4-bit más la XAI por gradiente), driver en el host y
@@ -178,7 +199,7 @@ Ver `.env.example`. Principales:
 | Variable | Descripción |
 |---|---|
 | `MODEL_BACKEND` | `qwen` (modelo real, GPU) o `mock` (desarrollo/CI). |
-| `BASE_MODEL` | Modelo base (`Qwen/Qwen2.5-3B-Instruct` o ruta local). |
+| `BASE_MODEL` | Modelo base: ruta local montada (`/base-model/Qwen2.5-3B-Instruct`) o id de Hugging Face presente en la caché. |
 | `ADAPTER_PATH` | Ruta del adapter dentro del contenedor (`/models/qlora_qwen25_3b_es_ecu`). |
 | `MODEL_VERSION` | Etiqueta de versión que se guarda en cada caso. |
 | `MAX_LENGTH` | Longitud máxima de tokens (128, igual que en entrenamiento). |
@@ -188,7 +209,8 @@ Ver `.env.example`. Principales:
 | `JWT_SIGNING_KEY` / `JWT_ALGORITHM` | Misma clave HS256 que `identity-service` y `social-service`. |
 | `INTERNAL_API_KEY` | Clave compartida con `social-service` (header `X-Internal-Api-Key`). |
 | `STAFF_CHECK_MODE` / `STAFF_USER_IDS` | Cómo se reconoce a un moderador en llamadas con JWT. `STAFF_USER_IDS` es una lista JSON, p. ej. `["12","15"]`. |
-| `MODELS_HOST_DIR` / `HF_CACHE_HOST_DIR` | Carpetas del host montadas para el modelo y la caché. |
+| `MODELS_HOST_DIR` / `BASE_MODEL_HOST_DIR` / `HF_CACHE_HOST_DIR` | Carpetas del host montadas para el adapter, el modelo base y la caché HF. |
+| `HF_HUB_OFFLINE` / `TRANSFORMERS_OFFLINE` | `1` por defecto en la imagen: no se descarga nada en el arranque. |
 
 ## Autenticación
 
