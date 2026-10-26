@@ -115,11 +115,24 @@ En Linux basta con apuntar `BASE_MODEL_HOST_DIR` al snapshot (Docker sigue los s
 relativos) o usar `BASE_MODEL=Qwen/Qwen2.5-3B-Instruct` con la caché montada en
 `HF_CACHE_HOST_DIR`.
 
-Requisitos: GPU NVIDIA con soporte bf16 (Ampere o superior; estimado 4–6 GB de VRAM para el
-modelo en 4-bit más la XAI por gradiente), driver en el host y
-[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/).
-El compose reserva la GPU con `deploy.resources.reservations.devices`. Sin GPU, el backend
-`qwen` no arranca y `/health` responde 503; para desarrollar use `MODEL_BACKEND=mock`.
+Requisitos: GPU NVIDIA con soporte bf16 (Ampere o superior), driver en el host y
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/)
+(en Windows lo aporta Docker Desktop con WSL2). El compose reserva la GPU con
+`deploy.resources.reservations.devices`. Sin GPU, el backend `qwen` no arranca y `/health`
+responde 503; para desarrollar use `MODEL_BACKEND=mock`.
+
+Medido en una RTX 3070 Laptop (8 GB) con Docker Desktop/WSL2:
+
+| | Valor |
+|---|---|
+| VRAM con el modelo cargado | ~2.3 GB |
+| VRAM pico con XAI por gradiente (texto de 128 tokens) | ~2.7 GB |
+| Latencia `/classify` sin explicación (mediana) | ~0.10 s |
+| Latencia `/classify` con explicación (mediana, textos cortos) | ~0.33 s |
+| Arranque (carga de pesos desde una carpeta de Windows montada) | ~5 min |
+
+El arranque lento se debe a leer ~6 GB a través del montaje de Windows en WSL2; en un host
+Linux o con los pesos en un volumen de Docker es bastante más rápido.
 
 > El backend `mock` es un clasificador léxico determinista que **no** es el modelo de la TIC;
 > solo imita su contrato para probar la política, la persistencia y la API.
