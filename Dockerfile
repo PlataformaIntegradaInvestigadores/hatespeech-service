@@ -30,6 +30,11 @@ COPY --chown=appuser:appuser . .
 
 RUN mkdir -p /home/appuser/.cache/huggingface && chown -R appuser:appuser /home/appuser/.cache
 
+# torch >= 2.14 despacha algunas ops (p. ej. RoPE) a kernels Triton que se compilan con un
+# compilador C que la imagen slim no trae. Se fuerza la ruta eager, la misma con la que se
+# evaluó el adapter (entorno Windows sin Triton).
+ENV TORCH_DISABLE_NATIVE_JIT=1
+
 USER appuser
 
 EXPOSE 8006
