@@ -129,6 +129,7 @@ def health():
                         if settings.MODEL_BACKEND == "qwen"
                         else "modelo-mock",
                         "status": "ok" if model_ok else "error",
+                        "device": classifier.device if model_ok else None,
                     },
                     {"name": "base-de-datos", "status": "ok" if db_ok else "error"},
                 ],

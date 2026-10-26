@@ -35,12 +35,17 @@ class QwenQLoRAClassifier(HateSpeechClassifier):
         self.top_k = top_k
         self.tok = None
         self.model = None
+        self._device = "cpu"
         # Una sola GPU: se serializan las inferencias (el gradiente usa estado del modelo).
         self._lock = threading.Lock()
 
     @property
     def ready(self) -> bool:
         return self.model is not None
+
+    @property
+    def device(self) -> str:
+        return self._device
 
     def load(self) -> None:
         if self.model is not None:
@@ -73,6 +78,7 @@ class QwenQLoRAClassifier(HateSpeechClassifier):
         base.config.pad_token_id = tok.pad_token_id
         self.model = PeftModel.from_pretrained(base, self.adapter_path).eval()
         self.tok = tok
+        self._device = f"cuda:0 ({torch.cuda.get_device_name(0)})"
         logger.info("Modelo %s + adapter %s cargado", self.base_model, self.adapter_path)
 
     # ------------------------------------------------------------------ inferencia

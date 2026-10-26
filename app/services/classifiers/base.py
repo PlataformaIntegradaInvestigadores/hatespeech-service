@@ -24,5 +24,10 @@ class HateSpeechClassifier(ABC):
     @abstractmethod
     def ready(self) -> bool: ...
 
+    @property
+    def device(self) -> str:
+        """Dispositivo donde corre el modelo; se expone en /health."""
+        return "cpu"
+
     @abstractmethod
     def predict(self, text: str, explain: bool = True) -> ClassificationResult: ...
