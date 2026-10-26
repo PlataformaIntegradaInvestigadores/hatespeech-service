@@ -32,7 +32,9 @@ class PolicyOutcome:
     reasons: tuple[str, ...]
 
 
-def evaluate(p_hate: float, class_threshold: float, hide_threshold: float, tau: float) -> PolicyOutcome:
+def evaluate(
+    p_hate: float, class_threshold: float, hide_threshold: float, tau: float
+) -> PolicyOutcome:
     label = LABEL_HATE if p_hate >= class_threshold else LABEL_NOT_HATE
     confidence = max(p_hate, 1.0 - p_hate)
     decision = AUTO if confidence >= tau else DERIVAR
