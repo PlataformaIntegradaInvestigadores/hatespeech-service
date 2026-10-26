@@ -1,0 +1,20 @@
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.black]
+target-version = ["py311"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short --cov=app --cov-report=term --cov-report=xml:coverage.xml"
+markers = [
+    "integration: marks tests as integration tests (run with -m integration)",
+]
+
+[tool.coverage.run]
+# El backend Qwen necesita torch + GPU; CI corre con MODEL_BACKEND=mock.
+# Su lógica pura (palabras, top-k) vive en app/services/xai.py y sí se cubre.
+omit = ["app/services/classifiers/qwen.py"]
