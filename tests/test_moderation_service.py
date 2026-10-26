@@ -32,7 +32,11 @@ def test_odio_alto_se_oculta_y_entra_a_cola(svc, classifier):
 def test_zona_dudosa_se_deriva_pero_sigue_visible(svc, classifier):
     case, out = svc.classify(classifier, DUDOSO, "comment", "2")
     assert out.decision == "DERIVAR"
-    assert (case.visibility, case.review_status, case.reasons) == ("visible", "pending", ["deferred"])
+    assert (case.visibility, case.review_status, case.reasons) == (
+        "visible",
+        "pending",
+        ["deferred"],
+    )
 
 
 def test_reclasificar_mismo_contenido_actualiza_el_caso(svc, classifier):
@@ -72,7 +76,11 @@ def test_reportes_idempotentes_y_umbral(svc, classifier):
     assert (created, total, crossed) == (False, 4, False)
     case, created, total, crossed = svc.report("comment", "7", "r4", reason="insulto")
     assert (created, total, crossed) == (True, 5, True)
-    assert (case.visibility, case.review_status, case.reasons) == ("hidden", "pending", ["reported"])
+    assert (case.visibility, case.review_status, case.reasons) == (
+        "hidden",
+        "pending",
+        ["reported"],
+    )
 
 
 def test_reporte_de_contenido_no_clasificado_crea_caso(svc):

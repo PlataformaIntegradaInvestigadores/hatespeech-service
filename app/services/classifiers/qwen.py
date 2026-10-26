@@ -81,7 +81,11 @@ class QwenQLoRAClassifier(HateSpeechClassifier):
 
         with torch.no_grad():
             b = self.tok(
-                [text], truncation=True, max_length=self.max_length, padding=True, return_tensors="pt"
+                [text],
+                truncation=True,
+                max_length=self.max_length,
+                padding=True,
+                return_tensors="pt",
             ).to(0)
             logits = self.model(**b).logits.float()
             return float(torch.softmax(logits, -1)[0, 1].item())

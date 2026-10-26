@@ -29,3 +29,41 @@ def classifier():
     clf = MockClassifier()
     clf.load()
     return clf
+
+
+INTERNAL_KEY = "test-internal-key"
+JWT_KEY = "test-signing-key"
+
+
+def make_token(claims: dict | None = None, key: str = JWT_KEY, **extra) -> str:
+    import time
+
+    import jwt
+
+    payload = {"token_type": "access", "exp": int(time.time()) + 600, "sub": "100"}
+    payload.update(claims or {})
+    payload.update(extra)
+    return jwt.encode(payload, key, algorithm="HS256")
+
+
+def bearer(**claims) -> dict:
+    return {"Authorization": f"Bearer {make_token(claims)}"}
+
+
+def internal(user_id: str | None = None, staff: bool = False) -> dict:
+    h = {"X-Internal-Api-Key": INTERNAL_KEY}
+    if user_id:
+        h["X-Acting-User-Id"] = user_id
+    if staff:
+        h["X-Acting-User-Is-Staff"] = "true"
+    return h
+
+
+@pytest.fixture
+def client():
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app) as c:
+        yield c

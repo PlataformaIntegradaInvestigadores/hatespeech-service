@@ -19,9 +19,7 @@ def textos_por_offset(text: str, offsets: Sequence[tuple[int, int]]) -> list[str
     return [text[a:b] if b > a else "" for a, b in offsets]
 
 
-def palabras(
-    text: str, offsets: Sequence[tuple[int, int]], sal: Sequence[float]
-) -> list[dict]:
+def palabras(text: str, offsets: Sequence[tuple[int, int]], sal: Sequence[float]) -> list[dict]:
     """Agrega la saliencia de los subtokens a palabras (regex \\w+ sobre el texto)."""
     out = []
     for m in _WORD_RE.finditer(text):

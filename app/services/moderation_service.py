@@ -150,7 +150,9 @@ class ModerationService:
         if exists is None:
             try:
                 with self.db.begin_nested():
-                    self.db.add(ContentReport(case_id=case.id, reporter_id=reporter_id, reason=reason))
+                    self.db.add(
+                        ContentReport(case_id=case.id, reporter_id=reporter_id, reason=reason)
+                    )
                 created = True
             except IntegrityError:  # carrera entre dos peticiones del mismo usuario
                 created = False
@@ -181,7 +183,9 @@ class ModerationService:
             q = q.where(ModerationCase.review_status != "none")
         if content_type:
             q = q.where(ModerationCase.content_type == content_type)
-        rows = list(self.db.scalars(q.order_by(ModerationCase.updated_at.desc(), ModerationCase.id.desc())))
+        rows = list(
+            self.db.scalars(q.order_by(ModerationCase.updated_at.desc(), ModerationCase.id.desc()))
+        )
         if reason:
             # reasons es JSON; se filtra en Python para ser portable entre SQLite y Postgres.
             rows = [c for c in rows if reason in (c.reasons or [])]
