@@ -1,0 +1,108 @@
+# .dockerignore
+# Excluir archivos innecesarios del contexto de Docker para builds más rápidos
+
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.env*
+*.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.sql
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.bak
+*.backup
+*.log
+logs/
+
+# Test files
+test_*.py
+*_test.py
+tests/
+
+# Documentation
+README.md
+docs/
+
+# Jupyter notebooks
+*.ipynb
+.ipynb_checkpoints
+
+# Pesos del modelo: se montan como volumen, no viajan al build
+*.bin
+*.pt
+*.gguf
+*.safetensors
+*.onnx
+*.h5
+
+# Temporary files
+*.tmp
+*.temp
+
+# Node modules (si los hay)
+node_modules/
+
+# Archivos específicos que no queremos en el contenedor
+Dockerfile*
+docker-compose*.yml
+docker-compose*.yaml
+.dockerignore
+/models/
+/hf-cache/

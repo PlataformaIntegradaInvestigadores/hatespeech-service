@@ -1,0 +1,7 @@
+# Dependencias del backend real (MODEL_BACKEND=qwen). Requieren GPU NVIDIA con CUDA.
+# torch se instala desde el índice de PyTorch con CUDA 12.6 (ver Dockerfile).
+transformers>=4.46
+peft>=0.13
+accelerate>=1.0
+bitsandbytes>=0.45
+numpy

@@ -1,0 +1,55 @@
+services:
+  hatespeech-service:
+    build:
+      context: .
+      args:
+        INSTALL_GPU: "true"
+    container_name: hatespeech-service
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:8006:8006"
+    env_file:
+      - .env
+    volumes:
+      # Adapter QLoRA ES+ECU (solo lectura) y caché de Hugging Face para el modelo base.
+      - ${MODELS_HOST_DIR:-./models}:/models:ro
+      - ${HF_CACHE_HOST_DIR:-./hf-cache}:/home/appuser/.cache/huggingface
+    depends_on:
+      - hatespeech-db
+    # Requiere NVIDIA Container Toolkit en el host. Con MODEL_BACKEND=mock se puede quitar.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      default:
+      centinela-net:
+        aliases:
+          - hatespeech-service
+
+  hatespeech-db:
+    image: postgres:16
+    container_name: hatespeech-db
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - hatespeech_postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_DB=${DB_NAME:-hatespeech}
+      - POSTGRES_USER=${DB_USER:-hatespeech}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-hatespeech}
+    networks:
+      - default
+
+volumes:
+  hatespeech_postgres_data:
+
+networks:
+  centinela-net:
+    external: true
