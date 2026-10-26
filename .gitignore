@@ -233,7 +233,8 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 # Pesos del modelo (se montan como volumen, nunca se versionan)
-models/
+/models/
+/hf-cache/
 *.safetensors
 *.bin
 *.gguf
