@@ -7,15 +7,37 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
+from app.api.v1 import api_router
 from app.core.config import settings
+from app.core.database import Base, build_engine, build_sessionmaker
+from app.services.classifiers.factory import build_classifier
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    engine = build_engine(settings.DATABASE_URL)
+    # v1 sin migraciones: las tablas se crean al arrancar (idempotente).
+    Base.metadata.create_all(engine)
+    app.state.engine = engine
+    app.state.sessionmaker = build_sessionmaker(engine)
+
+    app.state.classifier = None
+    app.state.classifier_error = None
+    try:
+        classifier = build_classifier(settings)
+        classifier.load()
+        app.state.classifier = classifier
+        logger.info("Clasificador '%s' listo (%s)", classifier.name, settings.MODEL_VERSION)
+    except Exception as exc:  # el servicio arranca y /health reporta el fallo
+        app.state.classifier_error = str(exc)
+        logger.error("No se pudo cargar el clasificador: %s", exc)
+
     yield
+    engine.dispose()
 
 
 app = FastAPI(
@@ -53,6 +75,7 @@ def custom_openapi():
 
 
 app.openapi = custom_openapi
+app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
 @app.get("/", include_in_schema=False)
@@ -67,12 +90,51 @@ def _local_ip() -> str:
         return "unknown"
 
 
+def _db_ok() -> bool:
+    engine = getattr(app.state, "engine", None)
+    if engine is None:
+        return False
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True
+    except Exception as exc:
+        logger.error("Health check: base de datos no disponible: %s", exc)
+        return False
+
+
 @app.get("/health", include_in_schema=False)
 def health():
+    classifier = getattr(app.state, "classifier", None)
+    model_ok = classifier is not None and classifier.ready
+    db_ok = _db_ok()
+    ok = model_ok and db_ok
+    if not model_ok:
+        logger.error(
+            "Health check: clasificador no disponible: %s",
+            getattr(app.state, "classifier_error", None),
+        )
+
     payload = {
         "server_name": "hatespeech-service",
         "ip_address": _local_ip(),
-        "global_status": "Online",
-        "groups": [],
+        "global_status": "Online" if ok else "Offline",
+        "groups": [
+            {
+                "group_name": "Moderación de discurso de odio",
+                "group_status": "Operativo" if ok else "Caído",
+                "services": [
+                    {
+                        "name": "modelo-qlora"
+                        if settings.MODEL_BACKEND == "qwen"
+                        else "modelo-mock",
+                        "status": "ok" if model_ok else "error",
+                    },
+                    {"name": "base-de-datos", "status": "ok" if db_ok else "error"},
+                ],
+            }
+        ],
     }
-    return JSONResponse(status_code=200, content=payload)
+    if ok:
+        return payload
+    return JSONResponse(status_code=503, content=payload)
