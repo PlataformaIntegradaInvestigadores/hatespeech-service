@@ -1,7 +1,9 @@
 # Dependencias del backend real (MODEL_BACKEND=qwen). Requieren GPU NVIDIA con CUDA.
-# torch se instala desde el índice de PyTorch con CUDA 12.6 (ver Dockerfile).
-transformers>=4.46
-peft>=0.13
-accelerate>=1.0
-bitsandbytes>=0.45
+# torch se instala desde el índice de PyTorch con CUDA 12.6 (ver Dockerfile, TORCH_VERSION).
+# Versiones fijadas a las del entorno con el que se entrenó y evaluó el adapter ES+ECU
+# (peft_version 0.21.2 en adapter_config.json), para que p_odio sea reproducible.
+transformers==5.18.0
+peft==0.21.2
+accelerate==1.15.0
+bitsandbytes==0.50.2
 numpy

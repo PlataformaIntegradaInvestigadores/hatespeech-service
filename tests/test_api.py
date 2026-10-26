@@ -16,6 +16,7 @@ def test_health_mock_online(client):
     body = r.json()
     assert body["global_status"] == "Online"
     assert {s["name"] for s in body["groups"][0]["services"]} == {"modelo-mock", "base-de-datos"}
+    assert body["groups"][0]["services"][0]["device"] == "cpu"
 
 
 def test_health_offline_si_el_modelo_falla(client):

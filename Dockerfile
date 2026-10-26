@@ -5,10 +5,13 @@ FROM python:3.11-slim
 # INSTALL_GPU=false construye una imagen solo con el backend mock (CI / dev sin GPU).
 ARG INSTALL_GPU=true
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu126
+ARG TORCH_VERSION=2.14.1
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    HF_HOME=/home/appuser/.cache/huggingface
+    HF_HOME=/home/appuser/.cache/huggingface \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1
 
 RUN groupadd --gid 1000 appuser \
     && useradd --uid 1000 --gid appuser --create-home --shell /usr/sbin/nologin appuser
@@ -19,13 +22,18 @@ COPY requirements.txt requirements-gpu.txt ./
 
 RUN pip install --no-cache-dir -r requirements.txt \
     && if [ "$INSTALL_GPU" = "true" ]; then \
-         pip install --no-cache-dir torch --index-url "$TORCH_INDEX_URL" \
+         pip install --no-cache-dir "torch==${TORCH_VERSION}" --index-url "$TORCH_INDEX_URL" \
          && pip install --no-cache-dir -r requirements-gpu.txt; \
        fi
 
 COPY --chown=appuser:appuser . .
 
 RUN mkdir -p /home/appuser/.cache/huggingface && chown -R appuser:appuser /home/appuser/.cache
+
+# torch >= 2.14 despacha algunas ops (p. ej. RoPE) a kernels Triton que se compilan con un
+# compilador C que la imagen slim no trae. Se fuerza la ruta eager, la misma con la que se
+# evaluó el adapter (entorno Windows sin Triton).
+ENV TORCH_DISABLE_NATIVE_JIT=1
 
 USER appuser
 
