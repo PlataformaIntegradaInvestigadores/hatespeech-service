@@ -34,6 +34,7 @@ class ModerationService:
             "class_threshold": s.CLASS_THRESHOLD,
             "hide_threshold": s.HIDE_THRESHOLD,
             "hitl_tau": s.HITL_TAU,
+            "review_band_min": s.review_band_min,
             "report_threshold": s.REPORT_THRESHOLD,
         }
 
@@ -86,7 +87,9 @@ class ModerationService:
     ) -> tuple[ModerationCase, policy.PolicyOutcome]:
         s = self.settings
         result = classifier.predict(text, explain=explain)
-        outcome = policy.evaluate(result.p_hate, s.CLASS_THRESHOLD, s.HIDE_THRESHOLD, s.HITL_TAU)
+        outcome = policy.evaluate(
+            result.p_hate, s.CLASS_THRESHOLD, s.HIDE_THRESHOLD, s.HITL_TAU, s.review_band_min
+        )
 
         case = self._get_or_create(content_type, content_id)
         text_changed = case.text is not None and case.text != text

@@ -5,7 +5,7 @@ from app.services.moderation_service import (
     ModerationService,
     SelfReportError,
 )
-from tests.conftest import DUDOSO, NEUTRAL, ODIO
+from tests.conftest import BANDA, DUDOSO, NEUTRAL, ODIO
 
 
 @pytest.fixture
@@ -19,6 +19,7 @@ def test_neutral_queda_visible_sin_revision(svc, classifier):
     assert (case.visibility, case.review_status, case.reasons) == ("visible", "none", [])
     assert case.model_backend == "mock"
     assert case.thresholds["hitl_tau"] == 0.65
+    assert case.thresholds["review_band_min"] == 0.65
 
 
 def test_odio_alto_se_oculta_y_entra_a_cola(svc, classifier):
@@ -147,3 +148,37 @@ def test_decision_guarda_auditoria(svc, classifier):
 def test_caso_inexistente(svc):
     with pytest.raises(CaseNotFoundError):
         svc.get_case(999)
+
+
+def test_franja_065_080_entra_a_cola_visible(svc, classifier):
+    case, out = svc.classify(classifier, BANDA, "comment", "30")
+    assert 0.65 <= case.p_hate < 0.80
+    assert (out.label, out.decision, out.action) == ("odio", "AUTO", "visible")
+    assert (case.visibility, case.review_status, case.reasons) == (
+        "visible",
+        "pending",
+        ["review_band"],
+    )
+    rows, total = svc.list_queue(reason="review_band")
+    assert total == 1 and rows[0].content_id == "30"
+
+
+def test_franja_se_reemplaza_al_reclasificar(svc, classifier):
+    svc.classify(classifier, BANDA, "comment", "31")
+    case, _ = svc.classify(classifier, NEUTRAL, "comment", "31")
+    assert (case.visibility, case.review_status, case.reasons) == ("visible", "none", [])
+
+
+def test_franja_y_reportes_se_acumulan(svc, classifier):
+    svc.classify(classifier, BANDA, "comment", "32", author_id="autor")
+    for i in range(5):
+        case, *_ = svc.report("comment", "32", f"u{i}")
+    assert case.reasons == ["reported", "review_band"]
+    assert (case.visibility, case.review_status) == ("hidden", "pending")
+
+
+def test_franja_desactivable(db, classifier, settings):
+    off = settings.model_copy(update={"REVIEW_BAND_ENABLED": False})
+    case, _ = ModerationService(db, off).classify(classifier, BANDA, "comment", "33")
+    assert (case.visibility, case.review_status, case.reasons) == ("visible", "none", [])
+    assert case.thresholds["review_band_min"] is None

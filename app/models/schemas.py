@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 ContentType = Literal["post", "comment"]
-Reason = Literal["hidden_by_model", "reported", "deferred"]
+Reason = Literal["hidden_by_model", "reported", "deferred", "review_band"]
 Visibility = Literal["visible", "hidden", "blocked"]
 ReviewStatus = Literal["none", "pending", "resolved"]
 
@@ -45,6 +45,7 @@ class Thresholds(BaseModel):
     class_threshold: float
     hide_threshold: float
     hitl_tau: float
+    review_band_min: float | None = None
     report_threshold: int
 
 

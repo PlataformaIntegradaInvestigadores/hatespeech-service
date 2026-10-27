@@ -7,6 +7,7 @@ from app.services.classifiers.mock import MockClassifier
 NEUTRAL = "Buenos días a todos, excelente artículo"
 DUDOSO = "eres un idiota"  # p≈0.545 con el mock -> confianza < 0.65 -> DERIVAR
 ODIO = "Esa gente es escoria y basura, me dan asco"  # p >= 0.80 -> oculto
+BANDA = "eres un idiota inútil, lárgate"  # p≈0.75 con el mock -> franja 0.65-0.80 -> revisión
 
 
 @pytest.fixture

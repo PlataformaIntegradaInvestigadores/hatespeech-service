@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     HIDE_THRESHOLD: float = Field(default=0.80, ge=0.0, le=1.0)
     # confianza = max(p, 1-p) < HITL_TAU -> DERIVAR a revisión humana.
     HITL_TAU: float = Field(default=0.65, ge=0.5, le=1.0)
+    # Franja de revisión: REVIEW_BAND_MIN <= p(odio) < HIDE_THRESHOLD -> visible, pero a la cola
+    # (motivo "review_band"). Por defecto empieza en el τ ECU; REVIEW_BAND_ENABLED=false la apaga.
+    REVIEW_BAND_ENABLED: bool = True
+    REVIEW_BAND_MIN: float = Field(default=0.65, ge=0.0, le=1.0)
     # Reportes de usuarios distintos que ocultan el contenido y lo envían a revisión.
     REPORT_THRESHOLD: int = Field(default=5, ge=1)
 
@@ -48,6 +52,11 @@ class Settings(BaseSettings):
     # "allowlist" (STAFF_USER_IDS) o "claim_or_allowlist" (cualquiera de los dos).
     STAFF_CHECK_MODE: Literal["claim", "allowlist", "claim_or_allowlist"] = "claim_or_allowlist"
     STAFF_USER_IDS: list[str] = []
+
+    @property
+    def review_band_min(self) -> float | None:
+        """Límite inferior efectivo de la franja de revisión, o None si está desactivada."""
+        return self.REVIEW_BAND_MIN if self.REVIEW_BAND_ENABLED else None
 
     model_config = SettingsConfigDict(
         case_sensitive=True,

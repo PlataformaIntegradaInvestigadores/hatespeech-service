@@ -1,4 +1,4 @@
-from tests.conftest import DUDOSO, NEUTRAL, ODIO, bearer, internal
+from tests.conftest import BANDA, DUDOSO, NEUTRAL, ODIO, bearer, internal
 
 API = "/api/v1"
 
@@ -59,6 +59,7 @@ def test_classify_odio_oculta_con_explicacion(client):
         "class_threshold": 0.5,
         "hide_threshold": 0.8,
         "hitl_tau": 0.65,
+        "review_band_min": 0.65,
         "report_threshold": 5,
     }
 
@@ -75,6 +76,15 @@ def test_classify_dudoso_se_deriva(client):
         "visible",
         ["deferred"],
     )
+
+
+def test_classify_franja_065_080_va_a_revision_visible(client):
+    body = classify(client, BANDA, 4)
+    assert (body["label"], body["decision"], body["action"]) == ("odio", "AUTO", "visible")
+    assert (body["visibility"], body["reasons"]) == ("visible", ["review_band"])
+    mod = internal("900", staff=True)
+    page = client.get(f"{API}/review-queue", params={"reason": "review_band"}, headers=mod).json()
+    assert [c["content_id"] for c in page["items"]] == ["4"]
 
 
 def test_classify_por_staff_jwt_y_validacion(client):
