@@ -43,8 +43,11 @@ flowchart TD
     B --> F{"confianza = max(p, 1-p) < τ?"}
     F -->|sí| G[DERIVAR a revisión humana]
     F -->|no| H[AUTO]
+    H --> K{"0.65 <= p_odio < 0.80?"}
+    K -->|sí| L[Franja de revisión: visible y a la cola]
     D --> Q[(Cola HITL)]
     G --> Q
+    L --> Q
     R[Reportes de usuarios distintos] --> S{">= 5 reportes?"}
     S -->|sí| T[Ocultar y enviar a la cola] --> Q
     Q --> U{Decisión del moderador}
@@ -55,11 +58,14 @@ flowchart TD
 
 Reglas de estado:
 
-- Un caso puede estar en la cola por uno o varios motivos: `hidden_by_model`, `deferred`
-  (τ) y `reported`.
-- Un contenido derivado por τ pero con `p_odio < 0.80` **sigue visible** mientras espera revisión.
+- Un caso puede estar en la cola por uno o varios motivos: `hidden_by_model` (`p_odio >= 0.80`),
+  `deferred` (confianza < τ), `review_band` (`0.65 <= p_odio < 0.80` sin derivación por τ) y
+  `reported`.
+- Un contenido derivado por τ o en la franja de revisión **sigue visible** mientras espera
+  revisión. Así ningún texto que el modelo etiqueta como odio queda sin ocultar ni revisar.
 - La decisión humana prevalece: reclasificar el mismo texto no la cambia. Si el autor **edita**
-  el texto, el caso se reevalúa desde cero. `block` es definitivo.
+  el texto, el caso se reevalúa desde cero. Un caso bloqueado no cambia por reclasificación ni
+  por reportes; solo otra decisión de moderador lo modifica.
 - Los reportes son idempotentes por usuario y no se permite reportar contenido propio. Tras una
   decisión humana, solo cuentan los reportes posteriores para reabrir el caso.
 - Cada decisión guarda el estado previo, el moderador, las notas y la `p_odio` del momento.
@@ -145,6 +151,7 @@ Linux o con los pesos en un volumen de Docker es bastante más rápido.
 | `HITL_TAU` | **0.65** | τ del adapter ES+ECU (config 3), fijado **solo en la validación** EcuHate-es (n = 723) con la regla de la TIC: máxima accuracy automática con ≤ 30 % derivado y n_auto ≥ 50. En test ECU (abierto una sola vez): acc 0.764, F1 macro 0.759, ~26.6 % a HITL. |
 | `HITL_TAU` (alternativa) | 0.80 | τ del especialista ES, por si el tráfico es mayoritariamente español general. Deriva más casos. |
 | `HIDE_THRESHOLD` | 0.80 | Decisión de producto (no sale de la tesis): solo se oculta lo que el modelo marca con alta probabilidad. |
+| `REVIEW_BAND_MIN` | 0.65 | Decisión de producto: desde aquí y hasta `HIDE_THRESHOLD`, lo que el modelo no derivó por τ entra visible a la cola (`review_band`). Coincide con el τ ECU. `REVIEW_BAND_ENABLED=false` la desactiva. |
 | `REPORT_THRESHOLD` | 5 | Decisión de producto: reportes de usuarios distintos para ocultar y enviar a revisión. |
 
 Los umbrales no deben ajustarse mirando datos de test. Cada respuesta de `/classify` incluye
@@ -217,7 +224,7 @@ Ver `.env.example`. Principales:
 | `MODEL_VERSION` | Etiqueta de versión que se guarda en cada caso. |
 | `MAX_LENGTH` | Longitud máxima de tokens (128, igual que en entrenamiento). |
 | `EXPLANATION_ENABLED` / `EXPLANATION_TOP_K` | Activa XAI y número de palabras devueltas. |
-| `CLASS_THRESHOLD`, `HIDE_THRESHOLD`, `HITL_TAU`, `REPORT_THRESHOLD` | Umbrales (ver tabla). |
+| `CLASS_THRESHOLD`, `HIDE_THRESHOLD`, `HITL_TAU`, `REVIEW_BAND_ENABLED`, `REVIEW_BAND_MIN`, `REPORT_THRESHOLD` | Umbrales (ver tabla). |
 | `DATABASE_URL` | URL SQLAlchemy (`postgresql+psycopg2://...` en Docker). |
 | `JWT_SIGNING_KEY` / `JWT_ALGORITHM` | Misma clave HS256 que `identity-service` y `social-service`. |
 | `INTERNAL_API_KEY` | Clave compartida con `social-service` (header `X-Internal-Api-Key`). |
@@ -249,12 +256,13 @@ Ver `.env.example`. Principales:
 - **`POST /classify`** — `{text, content_type: post|comment, content_id, author_id?, explain?}`.
   Devuelve `label`, `p_hate`, `confidence`, `decision` (`AUTO`/`DERIVAR`), `action` recomendada,
   `visibility` efectiva, `review_status`, `reasons`, `explanation.top_tokens`, `model` y
-  `thresholds`.
+  `thresholds`. `decision` refleja solo la regla de τ de la tesis; si el caso entra a la cola
+  lo indican `review_status` y `reasons` (un caso `AUTO` en la franja llega con `review_band`).
 - **`POST /reports`** — `{content_type, content_id, reporter_id?, reason?, text?, author_id?}`.
   201 si es un reporte nuevo, 200 si el usuario ya había reportado. Devuelve `report_count` y
   `threshold_reached`.
 - **`GET /review-queue`** — filtros `status` (`pending`|`resolved`|`all`), `reason`
-  (`hidden_by_model`|`reported`|`deferred`), `content_type`, `limit`, `offset`.
+  (`hidden_by_model`|`reported`|`deferred`|`review_band`), `content_type`, `limit`, `offset`.
 - **`GET /review-queue/{id}`** — caso con texto, explicación, motivos de reporte y bitácora.
 - **`POST /review-queue/{id}/decision`** — `{decision: approve|keep_hidden|block, notes?}`.
 - **`GET /moderation-status/{content_type}/{content_id}`** — `visibility`, `show_warning`,
