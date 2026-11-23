@@ -1,31 +1,24 @@
-name: CI — hatespeech-service
+name: CI
 
 on:
   push:
-    branches: [develop, main]
+    branches: [develop]
   pull_request:
     branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  # ── Lint ───────────────────────────────────────────────────────────────────
-  lint:
-    name: Lint (ruff)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Instalar ruff
-        run: pip install -q ruff
-      - name: Revisar estilo
-        run: |
-          ruff check .
-          ruff format --check .
+  branch-name:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/branch-name.yml
 
-  # ── Tests ──────────────────────────────────────────────────────────────────
-  test:
-    name: Pruebas (backend mock, SQLite)
+  # ── Control de calidad ────────────────────────────────────────────────────
+  # Siempre en modo mock: sin GPU, sin pesos y sin descargar el modelo.
+  quality:
+    name: Control de calidad (mock, sin GPU)
     runs-on: ubuntu-latest
     env:
       MODEL_BACKEND: mock
@@ -37,34 +30,31 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Instalar dependencias
-        run: pip install -q -r requirements.txt
-      - name: Ejecutar tests con cobertura
-        run: |
-          # pyproject.toml ya activa --cov=app y exige --cov-fail-under=90.
-          pytest tests/ --junitxml=report-unit.xml
+        run: python -m pip install -r requirements-dev.txt
+      - name: ruff check
+        run: python -m ruff check .
+      - name: black --check
+        run: python -m black --check .
+      - name: Ejecutar tests
+        # pyproject.toml ya fija --cov=app, el informe XML y --cov-fail-under=90.
+        run: python -m pytest --cov-report=term-missing --junitxml=report.xml
       - name: Subir resultados
         uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: coverage-report
+          name: quality-results
           path: |
-            report-unit.xml
+            report.xml
             coverage.xml
-
-  # ── Imagen Docker (sin CUDA ni modelo) ────────────────────────────────────
-  docker-build:
-    name: Build de la imagen (CPU)
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v7
-      - name: Construir imagen sin dependencias GPU
-        run: docker build --build-arg INSTALL_GPU=false -t hatespeech-service:ci .
-      - name: Smoke test en modo mock
+      - name: Validar docker-compose.yml
+        run: docker compose config --quiet
+      - name: Build de la imagen sin CUDA
+        run: docker build --build-arg INSTALL_GPU=false -t hatespeech-service:${{ github.sha }} .
+      - name: Smoke test /health en modo mock
         run: |
           docker run -d --name hs -p 8006:8006 \
             -e MODEL_BACKEND=mock -e DATABASE_URL=sqlite:////tmp/ci.db \
-            hatespeech-service:ci
+            hatespeech-service:${{ github.sha }}
           for i in 1 2 3 4 5 6 7 8 9 10; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:8006/health || echo "000")
             echo "Intento $i: HTTP $STATUS"
@@ -73,3 +63,46 @@ jobs:
           done
           docker logs hs
           exit 1
+
+  # ── Deploy staging ─────────────────────────────────────────────────────────
+  # El resto de servicios despliega en un runner self-hosted de la
+  # organización (etiqueta `staging`) que ya tiene el checkout en
+  # /opt/centinela/<servicio> y el .env. Este repo privado no tiene ese
+  # runner ni esos secretos: el job queda armado y solo corre si la variable
+  # de repositorio CENTINELA_DEPLOY_ENABLED vale "true". Si no, se omite y
+  # el workflow no falla.
+  deploy-staging:
+    name: Deploy a servidor staging
+    runs-on: [self-hosted, staging]
+    needs: quality
+    if: github.ref == 'refs/heads/develop' && vars.CENTINELA_DEPLOY_ENABLED == 'true'
+    steps:
+      - name: Actualizar codigo
+        run: |
+          cd /opt/centinela/hatespeech-service
+          git fetch origin develop
+          git reset --hard origin/develop
+
+      - name: Reconstruir contenedor
+        run: |
+          cd /opt/centinela/hatespeech-service
+          docker compose up -d --build --remove-orphans
+
+      - name: Health check
+        run: |
+          sleep 15
+          HEALTHY=false
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://127.0.0.1:${HATESPEECH_PUBLISH_PORT:-8008}/health || echo "000")
+            echo "Intento $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              HEALTHY=true; break
+            fi
+            sleep 6
+          done
+          if [ "$HEALTHY" = "false" ]; then
+            echo "Health check fallido — rollback"
+            cd /opt/centinela/hatespeech-service && git reset --hard HEAD~1
+            docker compose up -d --build --remove-orphans
+            exit 1
+          fi

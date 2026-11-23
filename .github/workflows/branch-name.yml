@@ -1,0 +1,46 @@
+name: Validar nombre de rama
+
+# Misma regla que PlataformaIntegradaInvestigadores/.github
+# (.github/workflows/branch-name.yml): feature/* y chore/* van a develop,
+# hotfix/* a main, y develop -> main solo lo abre el release owner.
+#
+# La comprobación vive en este repo (no se llama el workflow reusable de la
+# organización) por dos motivos: hatespeech-service no está en esa
+# organización, y las ramas de los cloud agents usan el prefijo cursor/,
+# que el workflow de la org rechazaría. cursor/* se acepta hacia develop
+# con el mismo papel que feature/*.
+
+on:
+  workflow_call:
+
+jobs:
+  branch-name:
+    name: Validar nombre de rama
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar prefijo + destino (feature/*, chore/*, cursor/* -> develop; hotfix/* -> main; develop -> main solo owner)
+        env:
+          BRANCH: ${{ github.head_ref }}
+          TARGET: ${{ github.base_ref }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          RELEASE_OWNER: DonOtame
+        run: |
+          case "$TARGET" in
+            develop)
+              case "$BRANCH" in
+                feature/*|chore/*|cursor/*) echo "OK: $BRANCH -> $TARGET"; exit 0 ;;
+                *) echo "Rama '$BRANCH' invalida para destino develop (usar feature/*, chore/* o cursor/*)"; exit 1 ;;
+              esac
+              ;;
+            main)
+              case "$BRANCH" in
+                hotfix/*) echo "OK: $BRANCH -> $TARGET"; exit 0 ;;
+                develop)
+                  if [ "$AUTHOR" = "$RELEASE_OWNER" ]; then echo "OK: release $BRANCH -> $TARGET por $AUTHOR"; exit 0; fi
+                  echo "Solo $RELEASE_OWNER puede abrir develop -> main. Abre tu PR hacia develop (feature/* o chore/*), o hotfix/* si main ya tiene el error."; exit 1 ;;
+                *) echo "Rama '$BRANCH' invalida para destino main (usar hotfix/*; develop -> main solo owner)"; exit 1 ;;
+              esac
+              ;;
+            *)
+              echo "Destino desconocido: $TARGET"; exit 1 ;;
+          esac
