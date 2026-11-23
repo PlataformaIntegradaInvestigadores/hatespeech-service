@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from app.api.deps import get_classifier, get_moderation_service
 from app.api.serializers import explanation_of
 from app.core.config import settings
-from app.core.security import Principal, require_internal_or_staff
+from app.core.security import Principal, require_internal
 from app.models.schemas import ClassifyRequest, ClassifyResponse
 from app.services.classifiers.base import HateSpeechClassifier
 from app.services.moderation_service import ModerationService
@@ -16,7 +16,7 @@ router = APIRouter()
 )
 def classify(
     body: ClassifyRequest,
-    _: Principal = Depends(require_internal_or_staff),
+    _: Principal = Depends(require_internal),
     classifier: HateSpeechClassifier = Depends(get_classifier),
     svc: ModerationService = Depends(get_moderation_service),
 ):
