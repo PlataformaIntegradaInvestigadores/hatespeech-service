@@ -48,10 +48,6 @@ class Settings(BaseSettings):
     JWT_SIGNING_KEY: str = "change-me"
     JWT_ALGORITHM: str = "HS256"
     INTERNAL_API_KEY: str = "change-me-internal"
-    # Cómo se decide si un JWT es de moderador: "claim" (is_staff en el token),
-    # "allowlist" (STAFF_USER_IDS) o "claim_or_allowlist" (cualquiera de los dos).
-    STAFF_CHECK_MODE: Literal["claim", "allowlist", "claim_or_allowlist"] = "claim_or_allowlist"
-    STAFF_USER_IDS: list[str] = []
 
     @property
     def review_band_min(self) -> float | None:

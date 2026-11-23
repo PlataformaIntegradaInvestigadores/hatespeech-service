@@ -26,7 +26,7 @@ flowchart LR
     SOC -->|"POST /classify<br/>X-Internal-Api-Key"| HS[hatespeech-service :8006]
     SOC -->|"POST /reports<br/>(botón Reportar)"| HS
     SOC -->|"GET /moderation-status"| HS
-    MOD[Moderador is_staff] -->|vía social-service| SOC
+    MOD[Admin del panel] -->|vía social-service| SOC
     SOC -->|"GET /review-queue<br/>POST /review-queue/{id}/decision"| HS
     HS --> M[(Qwen2.5-3B + QLoRA ES+ECU<br/>4-bit, GPU)]
     HS --> DB[(PostgreSQL<br/>casos, reportes, decisiones)]
@@ -232,29 +232,24 @@ Ver `.env.example`. Principales:
 | `DATABASE_URL` | URL SQLAlchemy (`postgresql+psycopg2://...` en Docker). |
 | `JWT_SIGNING_KEY` / `JWT_ALGORITHM` | Misma clave HS256 que `identity-service` y `social-service`. |
 | `INTERNAL_API_KEY` | Clave compartida con `social-service` (header `X-Internal-Api-Key`). |
-| `STAFF_CHECK_MODE` / `STAFF_USER_IDS` | Cómo se reconoce a un moderador en llamadas con JWT. `STAFF_USER_IDS` es una lista JSON, p. ej. `["12","15"]`. |
 | `MODELS_HOST_DIR` / `BASE_MODEL_HOST_DIR` / `HF_CACHE_HOST_DIR` | Carpetas del host montadas para el adapter, el modelo base y la caché HF. |
 | `HATESPEECH_PUBLISH_PORT` | Puerto en el host (default `8008`). No cambia el puerto interno `8006`. |
 | `HF_HUB_OFFLINE` / `TRANSFORMERS_OFFLINE` | `1` por defecto en la imagen: no se descarga nada en el arranque. |
 
 ## Autenticación
 
-- **Servicio a servicio (principal):** `X-Internal-Api-Key`. `social-service` propaga al usuario
-  con `X-Acting-User-Id` y, para moderadores, `X-Acting-User-Is-Staff: true` (lo obtiene de su
-  `IdentityPrincipal.is_staff`).
+- **Servicio a servicio (principal):** `X-Internal-Api-Key`. `social-service` propaga quién
+  actúa en `X-Acting-User-Id`. En la cola HITL ese id es el usuario de la clave compartida
+  de admin (`ADMIN_CENTINELA`), después de validar `X-Admin-Token`.
 - **JWT de `identity-service`:** `Authorization: Bearer <access>`; el usuario sale de
-  `user_id`, `company_id` o `sub`.
-- **Brecha conocida:** hoy el JWT de `identity-service` **no incluye `is_staff`**. Por eso la
-  verificación de moderador en llamadas con JWT es configurable (`claim`, `allowlist` o ambas).
-  El rol de moderador definitivo queda pendiente con el equipo de gobernanza; por ahora
-  `is_staff` actúa como moderador.
+  `user_id`, `company_id` o `sub`. Alcanza para reportar y leer el estado. No abre la cola.
 
-| Endpoint | API key interna | JWT usuario | JWT moderador |
-|---|---|---|---|
-| `POST /classify` | ✔ | ✘ | ✔ |
-| `POST /reports` | ✔ (`reporter_id` o `X-Acting-User-Id`) | ✔ (denunciante = token) | ✔ |
-| `GET /moderation-status/...` | ✔ | ✔ | ✔ |
-| `GET /review-queue`, detalle, decisión | ✔ con moderador identificado | ✘ | ✔ |
+| Endpoint | API key interna | JWT de usuario |
+|---|---|---|
+| `POST /classify` | ✔ | ✘ |
+| `POST /reports` | ✔ (`reporter_id` o `X-Acting-User-Id`) | ✔ (denunciante = token) |
+| `GET /moderation-status/...` | ✔ | ✔ |
+| `GET /review-queue`, detalle, decisión | ✔ con `X-Acting-User-Id` del admin | ✘ |
 
 ## API (`/api/v1`)
 

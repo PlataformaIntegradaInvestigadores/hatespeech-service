@@ -2,13 +2,15 @@
 
 Dos formas de llamar al servicio:
 
-1. **Servicio a servicio** (social-service): header `X-Internal-Api-Key` con `INTERNAL_API_KEY`.
-   social-service ya autenticó al usuario con su JWT y propaga la identidad en
-   `X-Acting-User-Id` y `X-Acting-User-Is-Staff` (lo toma de su `IdentityPrincipal.is_staff`).
-2. **JWT de identity-service** (`Authorization: Bearer ...`), HS256 firmado con `JWT_SIGNING_KEY`.
-   El id sale del claim `user_id` (o `company_id`, o `sub`). Hoy identity-service NO incluye
-   `is_staff` en el token, por eso la verificación de moderador es configurable
-   (`STAFF_CHECK_MODE`): claim `is_staff` si algún día se agrega, o lista `STAFF_USER_IDS`.
+1. **Servicio a servicio** (social-service): header `X-Internal-Api-Key`.
+   social-service ya autenticó al usuario (reportes) o al admin del panel
+   (cola HITL) y propaga esa identidad en `X-Acting-User-Id`. Para la cola,
+   ese id es el usuario de la clave compartida de admin, no un usuario de
+   identity-service.
+2. **JWT de identity-service** (`Authorization: Bearer ...`), HS256 firmado con
+   `JWT_SIGNING_KEY`. Sirve para reportar y consultar el estado. No autoriza
+   la cola de revisión: eso solo lo hace social-service tras validar
+   `X-Admin-Token`.
 """
 
 from __future__ import annotations
@@ -26,18 +28,6 @@ from app.core.config import settings
 class Principal:
     via: str  # "internal" | "jwt"
     user_id: str | None
-    is_staff: bool = False
-
-
-def _staff_from_claims(claims: dict, user_id: str | None) -> bool:
-    mode = settings.STAFF_CHECK_MODE
-    by_claim = bool(claims.get("is_staff", False))
-    by_list = user_id is not None and user_id in {str(u) for u in settings.STAFF_USER_IDS}
-    if mode == "claim":
-        return by_claim
-    if mode == "allowlist":
-        return by_list
-    return by_claim or by_list
 
 
 def _unauthorized(detail: str) -> HTTPException:
@@ -52,13 +42,11 @@ def get_principal(
     authorization: str | None = Header(default=None),
     x_internal_api_key: str | None = Header(default=None),
     x_acting_user_id: str | None = Header(default=None),
-    x_acting_user_is_staff: str | None = Header(default=None),
 ) -> Principal:
     if x_internal_api_key is not None:
         if not hmac.compare_digest(x_internal_api_key, settings.INTERNAL_API_KEY):
             raise _unauthorized("API key interna inválida")
-        is_staff = (x_acting_user_is_staff or "").strip().lower() in {"1", "true", "yes"}
-        return Principal(via="internal", user_id=x_acting_user_id or None, is_staff=is_staff)
+        return Principal(via="internal", user_id=x_acting_user_id or None)
 
     if not authorization or not authorization.lower().startswith("bearer "):
         raise _unauthorized("Credenciales no provistas")
@@ -78,19 +66,20 @@ def get_principal(
     user_id = str(raw_id) if raw_id is not None else None
     if user_id is None:
         raise _unauthorized("El token no identifica al usuario")
-    return Principal(via="jwt", user_id=user_id, is_staff=_staff_from_claims(claims, user_id))
+    return Principal(via="jwt", user_id=user_id)
 
 
-def require_internal_or_staff(principal: Principal = Depends(get_principal)) -> Principal:
-    if principal.via == "internal" or principal.is_staff:
-        return principal
-    raise HTTPException(status.HTTP_403_FORBIDDEN, "Solo social-service o moderadores")
+def require_internal(principal: Principal = Depends(get_principal)) -> Principal:
+    """Clasificación en segundo plano: solo social-service."""
+    if principal.via != "internal":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Solo social-service puede clasificar")
+    return principal
 
 
-def require_staff(principal: Principal = Depends(get_principal)) -> Principal:
-    """Cola y decisiones HITL: moderador (is_staff) identificado."""
-    if not principal.is_staff:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Se requiere rol de moderador (is_staff)")
+def require_acting_admin(principal: Principal = Depends(get_principal)) -> Principal:
+    """Cola HITL. social-service ya validó el token de admin y manda su usuario."""
+    if principal.via != "internal":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Solo social-service puede operar la cola")
     if not principal.user_id:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Falta X-Acting-User-Id del moderador")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Falta X-Acting-User-Id del admin")
     return principal
