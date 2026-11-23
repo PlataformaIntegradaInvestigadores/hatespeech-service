@@ -200,15 +200,19 @@ docker network create centinela-net   # si aún no existe
 docker compose up -d --build
 ```
 
-La API queda en `http://localhost:8006` (publicada solo en `127.0.0.1`). Para una imagen sin
-CUDA: `docker build --build-arg INSTALL_GPU=false .` y `MODEL_BACKEND=mock`.
+La API queda en `http://127.0.0.1:8008` (solo localhost). Dentro de `centinela-net` el
+servicio sigue siendo `http://hatespeech-service:8006`: es la URL que `social-service`
+tiene en `HATESPEECH_SERVICE_URL`. El puerto 8006 del host lo publica `analytics-service`
+desde octubre de 2026; por eso el mapeo del host es 8008 y se cambia con
+`HATESPEECH_PUBLISH_PORT`. Para una imagen sin CUDA: `docker build --build-arg INSTALL_GPU=false .`
+y `MODEL_BACKEND=mock`.
 
 ### Sin Docker (modo mock)
 
 ```bash
 python -m venv venv
 source venv/bin/activate    # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 MODEL_BACKEND=mock uvicorn app.main:app --host 0.0.0.0 --port 8006 --reload
 ```
 
@@ -230,6 +234,7 @@ Ver `.env.example`. Principales:
 | `INTERNAL_API_KEY` | Clave compartida con `social-service` (header `X-Internal-Api-Key`). |
 | `STAFF_CHECK_MODE` / `STAFF_USER_IDS` | Cómo se reconoce a un moderador en llamadas con JWT. `STAFF_USER_IDS` es una lista JSON, p. ej. `["12","15"]`. |
 | `MODELS_HOST_DIR` / `BASE_MODEL_HOST_DIR` / `HF_CACHE_HOST_DIR` | Carpetas del host montadas para el adapter, el modelo base y la caché HF. |
+| `HATESPEECH_PUBLISH_PORT` | Puerto en el host (default `8008`). No cambia el puerto interno `8006`. |
 | `HF_HUB_OFFLINE` / `TRANSFORMERS_OFFLINE` | `1` por defecto en la imagen: no se descarga nada en el arranque. |
 
 ## Autenticación
@@ -259,8 +264,10 @@ Ver `.env.example`. Principales:
   `thresholds`. `decision` refleja solo la regla de τ de la tesis; si el caso entra a la cola
   lo indican `review_status` y `reasons` (un caso `AUTO` en la franja llega con `review_band`).
 - **`POST /reports`** — `{content_type, content_id, reporter_id?, reason?, text?, author_id?}`.
-  201 si es un reporte nuevo, 200 si el usuario ya había reportado. Devuelve `report_count` y
-  `threshold_reached`.
+  201 si es un reporte nuevo, 200 si el usuario ya había reportado. Devuelve `report_count`,
+  `threshold_reached`, `visibility`, `review_status` y `reasons`. `social-service` copia
+  `reasons` al post o comentario; si la clave no viniera, la visibilidad se actualizaría
+  y los motivos locales quedarían viejos.
 - **`GET /review-queue`** — filtros `status` (`pending`|`resolved`|`all`), `reason`
   (`hidden_by_model`|`reported`|`deferred`|`review_band`), `content_type`, `limit`, `offset`.
 - **`GET /review-queue/{id}`** — caso con texto, explicación, motivos de reporte y bitácora.
@@ -273,7 +280,7 @@ Ver `.env.example`. Principales:
 Ejemplo (modo mock):
 
 ```bash
-curl -s -X POST http://localhost:8006/api/v1/classify \
+curl -s -X POST http://127.0.0.1:8008/api/v1/classify \
   -H 'Content-Type: application/json' -H "X-Internal-Api-Key: $INTERNAL_API_KEY" \
   -d '{"text":"Esa gente es escoria","content_type":"comment","content_id":42}'
 ```
@@ -293,24 +300,61 @@ pytest
 Corre con el backend `mock` y SQLite en memoria (ver `conftest.py`); no necesita GPU ni
 Postgres. La cobertura mínima es **90 %** (`--cov-fail-under=90` en `pyproject.toml`).
 `app/services/classifiers/qwen.py` se excluye de la cobertura porque requiere CUDA; su lógica
-de explicación vive en `xai.py`, que sí está probada.
+de explicación vive en `xai.py`, que sí está probada. Lint: `ruff check` y `black --check`
+(línea de 100), con las versiones de `requirements-dev.txt`.
 
 ## CI/CD
 
-`.github/workflows/ci.yml` corre en push y PR hacia `develop` y `main`:
+El pipeline sigue el de los servicios FastAPI de Centinela (`governance-service`,
+`analytics-service`, `ethical-recommender-service`): control de calidad en
+`ubuntu-latest`, cobertura ≥ 90 % y build de imagen, más un CD a staging al
+empujar `develop` y a producción al empujar `main`.
 
-1. `ruff check` y `ruff format --check`.
-2. Tests con cobertura ≥ 90 %.
-3. Build de la imagen sin CUDA (`INSTALL_GPU=false`) y smoke test de `/health` en modo mock.
+| Workflow | Cuándo | Qué hace |
+|---|---|---|
+| `ci.yml` | push a `develop`, PR a `develop`/`main` | Nombre de rama, `ruff`, `black`, `pytest` en modo mock, `docker compose config`, imagen sin CUDA y smoke test de `/health`. |
+| `cd-production.yml` | push a `main` | El mismo control de calidad y, si el deploy está habilitado, despliegue a producción. |
+| `add-to-project.yml` | issue abierto | Agrega el issue al Project de la organización si existe `ORG_PROJECT_TOKEN`. |
 
-Aún no hay despliegue automático: el modelo real necesita un host con GPU.
+Los jobs de deploy (`runs-on: [self-hosted, staging]` y `[self-hosted, production]`)
+están escritos como los de la organización: `git reset --hard` en
+`/opt/centinela/hatespeech-service`, `docker compose up -d --build` y rollback si
+`/health` no responde. **No se ejecutan** mientras la variable de repositorio
+`CENTINELA_DEPLOY_ENABLED` no sea `true`, así un repo sin los runners de la
+organización no deja el workflow en cola ni en rojo.
+
+Para activarlos hace falta:
+
+- Un runner self-hosted con etiqueta `staging` (push a `develop`) y otro con
+  etiqueta `production` (push a `main`). Los runners de
+  `PlataformaIntegradaInvestigadores` no están registrados en este repo.
+- El checkout del servidor en `/opt/centinela/hatespeech-service`, con `.env`
+  (a partir de `.env_produccion.example`) y los volúmenes del modelo. Esos
+  valores no son secrets de GitHub: viven en el host, igual que en los otros
+  servicios.
+- La variable de repositorio `CENTINELA_DEPLOY_ENABLED=true`.
+- `ORG_PROJECT_TOKEN` (PAT con acceso al Project de la organización) solo para
+  `add-to-project.yml`. Si falta, ese workflow termina en verde y no agrega el issue.
+
+Diferencias respecto del workflow de la org, a propósito:
+
+- El build de CI usa `INSTALL_GPU=false` y prueba `/health` en modo mock. No
+  descarga PyTorch CUDA ni los pesos.
+- La validación del nombre de rama está copiada en este repo (el workflow
+  reusable de la org no acepta el prefijo `cursor/` de los cloud agents, y
+  este repo no pertenece a la organización). Acepta `feature/*`, `chore/*` y
+  `cursor/*` hacia `develop`, y `hotfix/*` hacia `main`.
+- El healthcheck del deploy pega a `127.0.0.1:8008`, no a `8006`.
 
 ## Pendientes conocidos
 
 - Sin migraciones: las tablas se crean al arrancar (`create_all`). Agregar Alembic antes de
   cambiar el esquema en producción.
 - Inferencia en serie (un lock por modelo); suficiente para el volumen inicial.
-- Integración con `social-service` (llamadas al crear/editar, botón Reportar, vista de la cola).
+- La integración con `social-service` y `centinela-front` está en las ramas
+  `feature/hatespeech-moderation` de esos repos (sin merge). Este servicio ya
+  expone el contrato que esas ramas llaman: `POST /api/v1/classify`,
+  `POST /api/v1/reports`, la cola `/api/v1/review-queue` y `/health`.
 
 ## Convenciones
 

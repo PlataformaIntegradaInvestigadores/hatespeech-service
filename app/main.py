@@ -125,9 +125,9 @@ def health():
                 "group_status": "Operativo" if ok else "Caído",
                 "services": [
                     {
-                        "name": "modelo-qlora"
-                        if settings.MODEL_BACKEND == "qwen"
-                        else "modelo-mock",
+                        "name": (
+                            "modelo-qlora" if settings.MODEL_BACKEND == "qwen" else "modelo-mock"
+                        ),
                         "status": "ok" if model_ok else "error",
                         "device": classifier.device if model_ok else None,
                     },

@@ -32,7 +32,7 @@ def create_report(
     else:
         reporter_id = body.reporter_id or principal.user_id
     if not reporter_id:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "reporter_id es obligatorio")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "reporter_id es obligatorio")
     try:
         case, created, total, crossed = svc.report(
             body.content_type,
@@ -56,4 +56,5 @@ def create_report(
         threshold_reached=crossed,
         visibility=case.visibility,
         review_status=case.review_status,
+        reasons=list(case.reasons or []),
     )

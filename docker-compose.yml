@@ -8,10 +8,24 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    # Sin cap_drop: ALL. Los FastAPI de la org lo usan, pero este contenedor
+    # reserva una GPU NVIDIA y el runtime falla si se quitan todas las
+    # capabilities. read_only + tmpfs sí se aplican, como en el resto.
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+      - /home/appuser/.cache/torch:size=512m,mode=1777
     ports:
-      - "127.0.0.1:8006:8006"
+      # El proceso escucha en 8006 (HATESPEECH_SERVICE_URL de social-service).
+      # En el host, 8006 lo publica analytics-service; este servicio sale por 8008.
+      - "127.0.0.1:${HATESPEECH_PUBLISH_PORT:-8008}:8006"
     env_file:
-      - .env
+      - path: .env
+        required: false
+    environment:
+      MODEL_BACKEND: ${MODEL_BACKEND:-mock}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://hatespeech:hatespeech@hatespeech-db:5432/hatespeech}
+      DEBUG: ${DEBUG:-True}
     volumes:
       # Adapter QLoRA ES+ECU y modelo base, ambos en solo lectura.
       # El modelo base va como carpeta con archivos reales (no la caché de HF): en Windows
@@ -20,7 +34,21 @@ services:
       - ${BASE_MODEL_HOST_DIR:-./models/base}:/base-model:ro
       - ${HF_CACHE_HOST_DIR:-./hf-cache}:/home/appuser/.cache/huggingface
     depends_on:
-      - hatespeech-db
+      hatespeech-db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8006/health', timeout=5)",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # La carga del modelo real mide ~5 min desde un montaje de Windows.
+      start_period: 600s
     # Requiere NVIDIA Container Toolkit en el host. Con MODEL_BACKEND=mock se puede quitar.
     deploy:
       resources:
@@ -47,6 +75,11 @@ services:
       - POSTGRES_DB=${DB_NAME:-hatespeech}
       - POSTGRES_USER=${DB_USER:-hatespeech}
       - POSTGRES_PASSWORD=${DB_PASSWORD:-hatespeech}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-hatespeech} -d ${DB_NAME:-hatespeech}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     networks:
       - default
 
