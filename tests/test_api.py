@@ -132,6 +132,7 @@ def test_reportes_flujo_completo(client):
         True,
         "hidden",
     )
+    assert body["reasons"] == ["reported"]
 
     status = client.get(f"{API}/moderation-status/comment/50", headers=internal()).json()
     assert status["show_warning"] and status["sort_last"]

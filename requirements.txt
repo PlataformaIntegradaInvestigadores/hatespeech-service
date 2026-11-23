@@ -1,8 +1,12 @@
-# API
-fastapi==0.115.6
-uvicorn[standard]==0.32.1
-pydantic-settings==2.7.0
-python-dotenv==1.0.1
+# Runtime. Las herramientas de test y lint viven en requirements-dev.txt,
+# igual que en los servicios FastAPI de Centinela. Versiones de FastAPI,
+# pydantic y uvicorn alineadas con governance-service y analytics-service
+# (noviembre 2026).
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+python-dotenv==1.2.4
 
 # Persistencia
 SQLAlchemy==2.0.36
@@ -10,8 +14,3 @@ psycopg2-binary==2.9.10
 
 # Seguridad (validación del JWT HS256 emitido por identity-service)
 PyJWT==2.10.1
-
-# Testing
-pytest==8.3.4
-pytest-cov==6.0.0
-httpx==0.28.1

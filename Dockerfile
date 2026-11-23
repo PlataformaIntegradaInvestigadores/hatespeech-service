@@ -9,6 +9,8 @@ ARG TORCH_VERSION=2.14.1
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
     HF_HOME=/home/appuser/.cache/huggingface \
     HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1
@@ -38,5 +40,10 @@ ENV TORCH_DISABLE_NATIVE_JIT=1
 USER appuser
 
 EXPOSE 8006
+
+# El contenedor escucha en 8006, que es la URL interna que usa social-service.
+# start-period largo: cargar Qwen2.5-3B desde un volumen puede tardar minutos.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=600s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8006/health', timeout=5)"]
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8006"]

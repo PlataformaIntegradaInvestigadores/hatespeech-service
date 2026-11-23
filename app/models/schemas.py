@@ -85,6 +85,10 @@ class ReportResponse(BaseModel):
     threshold_reached: bool
     visibility: Visibility
     review_status: ReviewStatus
+    # social-service copia `reasons` al post/comentario solo si la clave viene
+    # en el JSON (apply_case_state). Sin ella, un reporte que oculta el
+    # contenido actualiza la visibilidad y deja los motivos viejos.
+    reasons: list[Reason]
 
 
 class ModerationStatus(BaseModel):
