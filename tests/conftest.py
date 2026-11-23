@@ -51,12 +51,10 @@ def bearer(**claims) -> dict:
     return {"Authorization": f"Bearer {make_token(claims)}"}
 
 
-def internal(user_id: str | None = None, staff: bool = False) -> dict:
+def internal(user_id: str | None = None) -> dict:
     h = {"X-Internal-Api-Key": INTERNAL_KEY}
     if user_id:
-        h["X-Acting-User-Id"] = user_id
-    if staff:
-        h["X-Acting-User-Is-Staff"] = "true"
+        h["X-Acting-User-Id"] = str(user_id)
     return h
 
 

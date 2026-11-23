@@ -1,7 +1,3 @@
-import pytest
-
-from app.core import security
-from app.core.config import settings
 from tests.conftest import bearer, internal, make_token
 
 CLASSIFY = {"text": "hola", "content_type": "post", "content_id": 1}
@@ -43,36 +39,16 @@ def test_usuario_normal_no_clasifica_ni_revisa(client):
     assert client.get("/api/v1/review-queue", headers=bearer()).status_code == 403
 
 
-def test_staff_por_claim_puede_revisar(client):
-    assert client.get("/api/v1/review-queue", headers=bearer(is_staff=True)).status_code == 200
+def test_jwt_no_abre_la_cola(client):
+    assert client.get("/api/v1/review-queue", headers=bearer(is_staff=True)).status_code == 403
 
 
-def test_interno_sin_moderador_identificado(client):
-    r = client.get("/api/v1/review-queue", headers=internal(staff=True))
-    assert r.status_code == 400
-    assert client.get("/api/v1/review-queue", headers=internal("5")).status_code == 403
+def test_interno_sin_admin_identificado(client):
+    assert client.get("/api/v1/review-queue", headers=internal()).status_code == 400
+    ok = client.get("/api/v1/review-queue", headers=internal("centinela-admin"))
+    assert ok.status_code == 200
 
 
-@pytest.mark.parametrize(
-    "mode, claims, allow, expected",
-    [
-        ("claim", {"is_staff": True}, [], True),
-        ("claim", {}, ["7"], False),
-        ("allowlist", {"is_staff": True}, [], False),
-        ("allowlist", {}, ["7"], True),
-        ("claim_or_allowlist", {}, ["7"], True),
-        ("claim_or_allowlist", {"is_staff": True}, [], True),
-        ("claim_or_allowlist", {}, [], False),
-    ],
-)
-def test_modos_de_staff(monkeypatch, mode, claims, allow, expected):
-    monkeypatch.setattr(settings, "STAFF_CHECK_MODE", mode)
-    monkeypatch.setattr(settings, "STAFF_USER_IDS", allow)
-    assert security._staff_from_claims(claims, "7") is expected
-
-
-def test_user_id_preferido_sobre_sub(client, monkeypatch):
-    monkeypatch.setattr(settings, "STAFF_CHECK_MODE", "allowlist")
-    monkeypatch.setattr(settings, "STAFF_USER_IDS", ["42"])
+def test_user_id_preferido_sobre_sub(client):
     h = bearer(user_id=42, sub="999")
-    assert client.get("/api/v1/review-queue", headers=h).status_code == 200
+    assert client.get("/api/v1/moderation-status/post/1", headers=h).status_code == 200

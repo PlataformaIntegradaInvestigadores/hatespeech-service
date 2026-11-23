@@ -82,13 +82,13 @@ def test_classify_franja_065_080_va_a_revision_visible(client):
     body = classify(client, BANDA, 4)
     assert (body["label"], body["decision"], body["action"]) == ("odio", "AUTO", "visible")
     assert (body["visibility"], body["reasons"]) == ("visible", ["review_band"])
-    mod = internal("900", staff=True)
+    mod = internal("centinela-admin")
     page = client.get(f"{API}/review-queue", params={"reason": "review_band"}, headers=mod).json()
     assert [c["content_id"] for c in page["items"]] == ["4"]
 
 
-def test_classify_por_staff_jwt_y_validacion(client):
-    h = bearer(is_staff=True)
+def test_classify_por_api_interna_y_validacion(client):
+    h = internal()
     ok = client.post(
         f"{API}/classify",
         json={"text": NEUTRAL, "content_type": "post", "content_id": 4},
@@ -174,7 +174,7 @@ def test_cola_detalle_y_decision(client):
     classify(client, ODIO, 70)
     classify(client, DUDOSO, 71, content_type="post")
     classify(client, NEUTRAL, 72)
-    mod = internal("900", staff=True)
+    mod = internal("centinela-admin")
 
     page = client.get(f"{API}/review-queue", headers=mod).json()
     assert page["total"] == 2
@@ -202,7 +202,7 @@ def test_cola_detalle_y_decision(client):
     assert r.status_code == 200
     body = r.json()
     assert body["case"]["visibility"] == "visible" and body["case"]["review_status"] == "resolved"
-    assert body["decision"]["moderator_id"] == "900"
+    assert body["decision"]["moderator_id"] == "centinela-admin"
     assert body["decision"]["previous_visibility"] == "hidden"
 
     detail = client.get(f"{API}/review-queue/{case_id}", headers=mod).json()
@@ -214,7 +214,7 @@ def test_cola_detalle_y_decision(client):
 
 
 def test_cola_errores(client):
-    mod = internal("900", staff=True)
+    mod = internal("centinela-admin")
     assert client.get(f"{API}/review-queue/999", headers=mod).status_code == 404
     assert (
         client.post(
@@ -231,9 +231,9 @@ def test_cola_errores(client):
     assert client.get(f"{API}/review-queue", params={"limit": 0}, headers=mod).status_code == 422
 
 
-def test_bloqueo_por_moderador(client):
+def test_bloqueo_por_admin(client):
     case_id = classify(client, ODIO, 80)["case_id"]
-    mod = bearer(user_id=1, is_staff=True)
+    mod = internal("centinela-admin")
     r = client.post(
         f"{API}/review-queue/{case_id}/decision", json={"decision": "block"}, headers=mod
     )

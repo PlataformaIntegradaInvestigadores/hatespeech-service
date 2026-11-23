@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import get_moderation_service
 from app.api.serializers import review_case, review_case_detail
-from app.core.security import Principal, require_staff
+from app.core.security import Principal, require_acting_admin
 from app.models.schemas import (
     ContentType,
     DecisionOut,
@@ -33,7 +33,7 @@ def list_review_queue(
     content_type: ContentType | None = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    _: Principal = Depends(require_staff),
+    _: Principal = Depends(require_acting_admin),
     svc: ModerationService = Depends(get_moderation_service),
 ):
     rows, total = svc.list_queue(status_, reason, content_type, limit, offset)
@@ -45,7 +45,7 @@ def list_review_queue(
 @router.get("/{case_id}", response_model=ReviewCaseDetail, summary="Detalle de un caso")
 def get_review_case(
     case_id: int,
-    _: Principal = Depends(require_staff),
+    _: Principal = Depends(require_acting_admin),
     svc: ModerationService = Depends(get_moderation_service),
 ):
     return review_case_detail(_get_or_404(svc, case_id))
@@ -57,7 +57,7 @@ def get_review_case(
 def decide(
     case_id: int,
     body: DecisionRequest,
-    principal: Principal = Depends(require_staff),
+    principal: Principal = Depends(require_acting_admin),
     svc: ModerationService = Depends(get_moderation_service),
 ):
     """`approve` → visible, `keep_hidden` → oculto con advertencia, `block` → bloqueado.
