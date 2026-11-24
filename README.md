@@ -303,8 +303,10 @@ curl -s -X POST http://127.0.0.1:8008/api/v1/classify \
 ## Documentación (Swagger)
 
 Schema OpenAPI en `GET /api/v1/openapi.json` y UI en `/docs`. `custom_openapi()` recorta el
-prefijo `/api/v1` y declara `servers: [{"url": "/api/hatespeech"}]`, igual que el resto de
-servicios FastAPI detrás del gateway. `/` y `/health` quedan fuera del schema.
+prefijo `/api/v1` de las rutas y declara como servidor la dirección interna
+`http://hatespeech-service:8008/api/v1`: este servicio no tiene ruta en el gateway (solo lo
+llama `social-service`). El gateway publica únicamente la documentación, en
+`/api/docs/v1/hatespeech`. `/` y `/health` quedan fuera del schema.
 
 ## Tests
 
