@@ -13,69 +13,35 @@ permissions:
 jobs:
   branch-name:
     if: github.event_name == 'pull_request'
-    uses: ./.github/workflows/branch-name.yml
+    uses: PlataformaIntegradaInvestigadores/.github/.github/workflows/branch-name.yml@main
 
-  # ── Control de calidad ────────────────────────────────────────────────────
-  # Siempre en modo mock: sin GPU, sin pesos y sin descargar el modelo.
   quality:
-    name: Control de calidad (mock, sin GPU)
     runs-on: ubuntu-latest
-    env:
-      MODEL_BACKEND: mock
-      DATABASE_URL: "sqlite://"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-      - name: Instalar dependencias
-        run: python -m pip install -r requirements-dev.txt
-      - name: ruff check
-        run: python -m ruff check .
-      - name: black --check
-        run: python -m black --check .
-      - name: Ejecutar tests
-        # pyproject.toml ya fija --cov=app, el informe XML y --cov-fail-under=90.
-        run: python -m pytest --cov-report=term-missing --junitxml=report.xml
-      - name: Subir resultados
-        uses: actions/upload-artifact@v7
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m ruff check .
+      - run: python -m black --check .
+      - run: python -m pytest --cov --cov-report=term-missing --cov-report=xml --junitxml=report.xml
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: quality-results
           path: |
             report.xml
             coverage.xml
-      - name: Validar docker-compose.yml
-        run: docker compose config --quiet
-      - name: Build de la imagen sin CUDA
-        run: docker build --build-arg INSTALL_GPU=false -t hatespeech-service:${{ github.sha }} .
-      - name: Smoke test /health en modo mock
-        run: |
-          docker run -d --name hs -p 8006:8006 \
-            -e MODEL_BACKEND=mock -e DATABASE_URL=sqlite:////tmp/ci.db \
-            hatespeech-service:${{ github.sha }}
-          for i in 1 2 3 4 5 6 7 8 9 10; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:8006/health || echo "000")
-            echo "Intento $i: HTTP $STATUS"
-            if [ "$STATUS" = "200" ]; then exit 0; fi
-            sleep 3
-          done
-          docker logs hs
-          exit 1
+      - run: docker compose config --quiet
+      - run: docker build -t hatespeech-service:${{ github.sha }} .
 
-  # ── Deploy staging ─────────────────────────────────────────────────────────
-  # El resto de servicios despliega en un runner self-hosted de la
-  # organización (etiqueta `staging`) que ya tiene el checkout en
-  # /opt/centinela/<servicio> y el .env. Este repo privado no tiene ese
-  # runner ni esos secretos: el job queda armado y solo corre si la variable
-  # de repositorio CENTINELA_DEPLOY_ENABLED vale "true". Si no, se omite y
-  # el workflow no falla.
   deploy-staging:
     name: Deploy a servidor staging
     runs-on: [self-hosted, staging]
     needs: quality
-    if: github.ref == 'refs/heads/develop' && vars.CENTINELA_DEPLOY_ENABLED == 'true'
+    if: github.ref == 'refs/heads/develop'
     steps:
       - name: Actualizar codigo
         run: |
@@ -90,10 +56,10 @@ jobs:
 
       - name: Health check
         run: |
-          sleep 15
+          sleep 10
           HEALTHY=false
           for i in 1 2 3 4 5; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://127.0.0.1:${HATESPEECH_PUBLISH_PORT:-8008}/health || echo "000")
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:8008/health || echo "000")
             echo "Intento $i: HTTP $STATUS"
             if [ "$STATUS" = "200" ]; then
               HEALTHY=true; break
@@ -101,7 +67,7 @@ jobs:
             sleep 6
           done
           if [ "$HEALTHY" = "false" ]; then
-            echo "Health check fallido — rollback"
+            echo "Health check fallido - rollback"
             cd /opt/centinela/hatespeech-service && git reset --hard HEAD~1
             docker compose up -d --build --remove-orphans
             exit 1

@@ -2,8 +2,9 @@
 # así que no hace falta una imagen base nvidia/cuda (el host aporta el driver).
 FROM python:3.11-slim
 
-# INSTALL_GPU=false construye una imagen solo con el backend mock (CI / dev sin GPU).
-ARG INSTALL_GPU=true
+# Por defecto, imagen sin CUDA: solo backend mock (CI, staging, dev sin GPU).
+# docker-compose.gpu.yml pasa INSTALL_GPU=true para el modelo real.
+ARG INSTALL_GPU=false
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu126
 ARG TORCH_VERSION=2.14.1
 
@@ -39,11 +40,11 @@ ENV TORCH_DISABLE_NATIVE_JIT=1
 
 USER appuser
 
-EXPOSE 8006
+EXPOSE 8008
 
-# El contenedor escucha en 8006, que es la URL interna que usa social-service.
+# Mismo puerto dentro y fuera del contenedor, como el resto de servicios (8008).
 # start-period largo: cargar Qwen2.5-3B desde un volumen puede tardar minutos.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=600s --retries=3 \
-    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8006/health', timeout=5)"]
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8008/health', timeout=5)"]
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8006"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8008"]

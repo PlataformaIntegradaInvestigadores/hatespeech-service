@@ -1,0 +1,33 @@
+# Modelo real (Qwen2.5-3B + adapter QLoRA) en un host con GPU NVIDIA.
+# Se activa con COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml en el .env
+# del host; sin él, docker-compose.yml levanta la imagen sin CUDA (modo mock),
+# que es lo que corre en staging (ticcd no tiene GPU) y en CI.
+services:
+  hatespeech-service:
+    build:
+      args:
+        INSTALL_GPU: "true"
+    # El runtime de NVIDIA falla si se quitan todas las capabilities.
+    cap_drop: !reset []
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+      - /home/appuser/.cache/torch:size=512m,mode=1777
+    environment:
+      MODEL_BACKEND: ${MODEL_BACKEND:-qwen}
+    volumes:
+      # Adapter QLoRA ES+ECU y modelo base, ambos en solo lectura.
+      # El modelo base va como carpeta con archivos reales (no la caché de HF): en Windows
+      # los symlinks de snapshots/ -> blobs/ no se resuelven dentro de un contenedor Linux.
+      - ${MODELS_HOST_DIR:-./models}:/models:ro
+      - ${BASE_MODEL_HOST_DIR:-./models/base}:/base-model:ro
+      - ${HF_CACHE_HOST_DIR:-./hf-cache}:/home/appuser/.cache/huggingface
+    healthcheck:
+      # La carga del modelo real mide ~5 min desde un montaje de Windows.
+      start_period: 600s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
