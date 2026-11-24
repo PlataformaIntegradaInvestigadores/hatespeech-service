@@ -62,8 +62,11 @@ app.add_middleware(
 
 
 def custom_openapi():
-    """Recorta el prefijo interno /api/v1 y declara la ruta pública detrás del
-    gateway (/api/hatespeech/), igual que el resto de servicios FastAPI."""
+    """Recorta el prefijo /api/v1 de las rutas y declara la dirección real del servicio.
+
+    A diferencia del resto, este servicio no tiene ruta en el gateway: solo lo llama
+    social-service por la red interna. El gateway publica únicamente esta documentación
+    (/api/docs/v1/hatespeech), así que el servidor declarado es el interno."""
     if app.openapi_schema:
         return app.openapi_schema
     schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
@@ -72,7 +75,12 @@ def custom_openapi():
         (path[len(prefix) :] if path.startswith(prefix) else path): item
         for path, item in schema.get("paths", {}).items()
     }
-    schema["servers"] = [{"url": "/api/hatespeech", "description": "Gateway"}]
+    schema["servers"] = [
+        {
+            "url": f"http://hatespeech-service:8008{prefix}",
+            "description": "Red interna (solo social-service)",
+        }
+    ]
     app.openapi_schema = schema
     return app.openapi_schema
 

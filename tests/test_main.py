@@ -16,7 +16,7 @@ def test_openapi_strips_internal_prefix():
         schema = client.get("/api/v1/openapi.json").json()
         # Segunda llamada reutiliza el schema cacheado.
         client.get("/api/v1/openapi.json")
-    assert schema["servers"][0]["url"] == "/api/hatespeech"
+    assert schema["servers"][0]["url"] == "http://hatespeech-service:8008/api/v1"
     assert all(not p.startswith("/api/v1") for p in schema["paths"])
 
 
