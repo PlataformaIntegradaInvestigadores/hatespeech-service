@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.api.deps import get_moderation_service
+from app.application.moderation_service import ModerationService
 from app.core.config import settings
 from app.core.security import Principal, get_principal
+from app.domain.errors import SelfReportError
 from app.models.schemas import ReportRequest, ReportResponse
-from app.services.moderation_service import ModerationService, SelfReportError
 
 router = APIRouter()
 

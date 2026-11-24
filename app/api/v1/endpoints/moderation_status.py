@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends
 
 from app.api.deps import get_moderation_service
+from app.application.moderation_service import ModerationService
 from app.core.security import Principal, get_principal
 from app.models.schemas import ContentType, ModerationStatus
-from app.services.moderation_service import ModerationService
 
 router = APIRouter()
 

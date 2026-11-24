@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.deps import get_moderation_service
 from app.api.serializers import review_case, review_case_detail
+from app.application.moderation_service import ModerationService
 from app.core.security import Principal, require_acting_admin
+from app.domain.errors import CaseNotFoundError
 from app.models.schemas import (
     ContentType,
     DecisionOut,
@@ -14,7 +16,6 @@ from app.models.schemas import (
     ReviewCaseDetail,
     ReviewQueuePage,
 )
-from app.services.moderation_service import CaseNotFoundError, ModerationService
 
 router = APIRouter(prefix="/review-queue")
 

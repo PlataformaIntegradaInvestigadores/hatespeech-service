@@ -1,6 +1,6 @@
 """Conversión de filas ORM a los esquemas públicos."""
 
-from app.models.db import ModerationCase
+from app.domain.entities import ModerationCase
 from app.models.schemas import DecisionOut, ReviewCase, ReviewCaseDetail
 
 

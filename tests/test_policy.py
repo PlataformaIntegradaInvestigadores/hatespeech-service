@@ -1,6 +1,6 @@
 import pytest
 
-from app.services import policy
+from app.domain import policy
 
 
 @pytest.mark.parametrize(

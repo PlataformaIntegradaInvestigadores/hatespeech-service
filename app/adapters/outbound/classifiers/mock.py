@@ -6,8 +6,8 @@ para poder probar la política de moderación, la persistencia y la API.
 
 from __future__ import annotations
 
-from app.services.classifiers.base import ClassificationResult, HateSpeechClassifier
-from app.services.xai import normalizar, palabras, top_palabras
+from app.application.ports import ClassificationResult, HateSpeechClassifier
+from app.domain.xai import normalizar, palabras, top_palabras
 
 # Pesos arbitrarios: cada término suma a un logit que se pasa por una función acotada.
 LEXICO: dict[str, float] = {

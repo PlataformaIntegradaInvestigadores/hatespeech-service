@@ -2,11 +2,11 @@ from fastapi import APIRouter, Depends
 
 from app.api.deps import get_classifier, get_moderation_service
 from app.api.serializers import explanation_of
+from app.application.moderation_service import ModerationService
+from app.application.ports import HateSpeechClassifier
 from app.core.config import settings
 from app.core.security import Principal, require_internal
 from app.models.schemas import ClassifyRequest, ClassifyResponse
-from app.services.classifiers.base import HateSpeechClassifier
-from app.services.moderation_service import ModerationService
 
 router = APIRouter()
 

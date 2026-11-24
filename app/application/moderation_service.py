@@ -2,29 +2,21 @@
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from datetime import datetime
 
-from app.core.config import Settings
-from app.models.db import ContentReport, ModerationCase, ModerationDecision, utcnow
-from app.services import policy
-from app.services.classifiers.base import HateSpeechClassifier
+from app.application.ports import HateSpeechClassifier, ModerationConfig, ModerationRepository
+from app.domain import policy
+from app.domain.entities import ContentReport, ModerationCase, ModerationDecision, utcnow
+from app.domain.errors import CaseNotFoundError, SelfReportError
 
 DECISION_TO_VISIBILITY = {"approve": "visible", "keep_hidden": "hidden", "block": "blocked"}
 
-
-class CaseNotFoundError(Exception):
-    pass
-
-
-class SelfReportError(Exception):
-    pass
+__all__ = ["CaseNotFoundError", "ModerationService", "SelfReportError"]
 
 
 class ModerationService:
-    def __init__(self, db: Session, settings: Settings) -> None:
-        self.db = db
+    def __init__(self, repository: ModerationRepository, settings: ModerationConfig) -> None:
+        self.repo = repository
         self.settings = settings
 
     # ------------------------------------------------------------------ helpers
@@ -39,32 +31,17 @@ class ModerationService:
         }
 
     def find_case(self, content_type: str, content_id: str) -> ModerationCase | None:
-        return self.db.scalar(
-            select(ModerationCase).where(
-                ModerationCase.content_type == content_type,
-                ModerationCase.content_id == content_id,
-            )
-        )
+        return self.repo.find_case(content_type, content_id)
 
     def _get_or_create(self, content_type: str, content_id: str) -> ModerationCase:
         case = self.find_case(content_type, content_id)
         if case is None:
-            case = ModerationCase(
-                content_type=content_type,
-                content_id=content_id,
-                visibility="visible",
-                review_status="none",
-                reasons=[],
-            )
-            self.db.add(case)
-            self.db.flush()
+            case = ModerationCase(content_type=content_type, content_id=content_id)
+            self.repo.add_case(case)
         return case
 
-    def report_count(self, case: ModerationCase, since=None) -> int:
-        q = select(func.count(ContentReport.id)).where(ContentReport.case_id == case.id)
-        if since is not None:
-            q = q.where(ContentReport.created_at > since)
-        return int(self.db.scalar(q) or 0)
+    def report_count(self, case: ModerationCase, since: datetime | None = None) -> int:
+        return self.repo.count_reports(case.id, since)
 
     @staticmethod
     def _apply_reasons(case: ModerationCase, reasons: list[str]) -> None:
@@ -117,7 +94,7 @@ class ModerationService:
                 case.resolved_at = None
                 case.resolved_by = None
             self._apply_reasons(case, keep + list(outcome.reasons))
-        self.db.commit()
+        self.repo.commit()
         return case, outcome
 
     # ------------------------------------------------------------------ reportes
@@ -141,24 +118,14 @@ class ModerationService:
         if author_id and case.author_id is None:
             case.author_id = author_id
         if case.author_id is not None and case.author_id == reporter_id:
-            self.db.rollback()
+            self.repo.rollback()
             raise SelfReportError("Un usuario no puede reportar su propio contenido")
 
         created = False
-        exists = self.db.scalar(
-            select(ContentReport).where(
-                ContentReport.case_id == case.id, ContentReport.reporter_id == reporter_id
+        if not self.repo.has_report(case.id, reporter_id):
+            created = self.repo.add_report(
+                ContentReport(case_id=case.id, reporter_id=reporter_id, reason=reason)
             )
-        )
-        if exists is None:
-            try:
-                with self.db.begin_nested():
-                    self.db.add(
-                        ContentReport(case_id=case.id, reporter_id=reporter_id, reason=reason)
-                    )
-                created = True
-            except IntegrityError:  # carrera entre dos peticiones del mismo usuario
-                created = False
 
         total = self.report_count(case)
         relevant = self.report_count(case, since=case.resolved_at) if case.resolved_at else total
@@ -167,7 +134,7 @@ class ModerationService:
             # Si ya hubo decisión humana, los nuevos reportes reabren el caso desde cero.
             reasons = [] if case.review_status == "resolved" else list(case.reasons)
             self._apply_reasons(case, reasons + [policy.REASON_REPORTED])
-        self.db.commit()
+        self.repo.commit()
         return case, created, total, crossed
 
     # ------------------------------------------------------------------ cola HITL
@@ -179,23 +146,14 @@ class ModerationService:
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[ModerationCase], int]:
-        q = select(ModerationCase)
-        if status != "all":
-            q = q.where(ModerationCase.review_status == status)
-        else:
-            q = q.where(ModerationCase.review_status != "none")
-        if content_type:
-            q = q.where(ModerationCase.content_type == content_type)
-        rows = list(
-            self.db.scalars(q.order_by(ModerationCase.updated_at.desc(), ModerationCase.id.desc()))
-        )
+        rows = self.repo.list_cases(None if status == "all" else status, content_type or None)
         if reason:
             # reasons es JSON; se filtra en Python para ser portable entre SQLite y Postgres.
             rows = [c for c in rows if reason in (c.reasons or [])]
         return rows[offset : offset + limit], len(rows)
 
     def get_case(self, case_id: int) -> ModerationCase:
-        case = self.db.get(ModerationCase, case_id)
+        case = self.repo.get_case(case_id)
         if case is None:
             raise CaseNotFoundError(case_id)
         return case
@@ -216,11 +174,11 @@ class ModerationService:
             new_visibility=new_visibility,
             p_hate_at_decision=case.p_hate,
         )
-        self.db.add(audit)
+        self.repo.add_decision(audit)
         case.visibility = new_visibility
         case.review_status = "resolved"
         case.resolved_at = utcnow()
         case.resolved_by = moderator_id
-        self.db.commit()
-        self.db.refresh(case)
+        self.repo.commit()
+        self.repo.refresh(case)
         return case, audit

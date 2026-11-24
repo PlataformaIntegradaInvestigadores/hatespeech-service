@@ -1,9 +1,9 @@
 import pytest
 
+from app.adapters.outbound.classifiers.mock import MockClassifier
+from app.bootstrap import build_classifier
 from app.core.config import Settings
-from app.services.classifiers import build_classifier
-from app.services.classifiers.mock import MockClassifier
-from app.services.xai import normalizar, palabras, textos_por_offset, top_palabras
+from app.domain.xai import normalizar, palabras, textos_por_offset, top_palabras
 
 
 def test_textos_por_offset_respeta_tildes():

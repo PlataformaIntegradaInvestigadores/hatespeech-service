@@ -1,8 +1,12 @@
 import pytest
 
+from app.adapters.outbound.classifiers.mock import MockClassifier
+from app.adapters.outbound.persistence.database import (
+    build_engine,
+    build_sessionmaker,
+    create_schema,
+)
 from app.core.config import Settings
-from app.core.database import Base, build_engine, build_sessionmaker
-from app.services.classifiers.mock import MockClassifier
 
 NEUTRAL = "Buenos días a todos, excelente artículo"
 DUDOSO = "eres un idiota"  # p≈0.545 con el mock -> confianza < 0.65 -> DERIVAR
@@ -18,7 +22,7 @@ def settings():
 @pytest.fixture
 def db(settings):
     engine = build_engine(settings.DATABASE_URL)
-    Base.metadata.create_all(engine)
+    create_schema(engine)
     session = build_sessionmaker(engine)()
     yield session
     session.close()
