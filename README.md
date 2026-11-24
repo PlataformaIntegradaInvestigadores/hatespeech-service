@@ -23,7 +23,7 @@ estado de moderación (servicio a servicio).
 ```mermaid
 flowchart LR
     FE[centinela-front] -->|JWT| SOC[social-service]
-    SOC -->|"POST /classify<br/>X-Internal-Api-Key"| HS[hatespeech-service :8006]
+    SOC -->|"POST /classify<br/>X-Internal-Api-Key"| HS[hatespeech-service :8008]
     SOC -->|"POST /reports<br/>(botón Reportar)"| HS
     SOC -->|"GET /moderation-status"| HS
     MOD[Admin del panel] -->|vía social-service| SOC
@@ -200,12 +200,23 @@ docker network create centinela-net   # si aún no existe
 docker compose up -d --build
 ```
 
-La API queda en `http://127.0.0.1:8008` (solo localhost). Dentro de `centinela-net` el
-servicio sigue siendo `http://hatespeech-service:8006`: es la URL que `social-service`
-tiene en `HATESPEECH_SERVICE_URL`. El puerto 8006 del host lo publica `analytics-service`
-desde octubre de 2026; por eso el mapeo del host es 8008 y se cambia con
-`HATESPEECH_PUBLISH_PORT`. Para una imagen sin CUDA: `docker build --build-arg INSTALL_GPU=false .`
-y `MODEL_BACKEND=mock`.
+La API queda en `http://127.0.0.1:8008` (solo localhost) y, dentro de `centinela-net`, en
+`http://hatespeech-service:8008`: es la URL que `social-service` debe tener en
+`HATESPEECH_SERVICE_URL`. Mismo puerto dentro y fuera del contenedor, como el resto de
+servicios.
+
+`docker-compose.yml` levanta la imagen **sin CUDA** con el backend `mock` (CI, staging y
+desarrollo sin GPU). Para el modelo real en un host con GPU NVIDIA y NVIDIA Container
+Toolkit, sumar el override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+# o, de forma permanente, en el .env del host:
+# COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
+```
+
+El override instala PyTorch CUDA, monta el adapter y el modelo base, reserva la GPU y
+usa `MODEL_BACKEND=qwen` por defecto.
 
 ### Sin Docker (modo mock)
 
@@ -213,7 +224,7 @@ y `MODEL_BACKEND=mock`.
 python -m venv venv
 source venv/bin/activate    # Windows: venv\Scripts\activate
 pip install -r requirements-dev.txt
-MODEL_BACKEND=mock uvicorn app.main:app --host 0.0.0.0 --port 8006 --reload
+MODEL_BACKEND=mock uvicorn app.main:app --host 0.0.0.0 --port 8008 --reload
 ```
 
 ## Variables de entorno
@@ -233,7 +244,7 @@ Ver `.env.example`. Principales:
 | `JWT_SIGNING_KEY` / `JWT_ALGORITHM` | Misma clave HS256 que `identity-service` y `social-service`. |
 | `INTERNAL_API_KEY` | Clave compartida con `social-service` (header `X-Internal-Api-Key`). |
 | `MODELS_HOST_DIR` / `BASE_MODEL_HOST_DIR` / `HF_CACHE_HOST_DIR` | Carpetas del host montadas para el adapter, el modelo base y la caché HF. |
-| `HATESPEECH_PUBLISH_PORT` | Puerto en el host (default `8008`). No cambia el puerto interno `8006`. |
+| `COMPOSE_FILE` | `docker-compose.yml:docker-compose.gpu.yml` en hosts con GPU (modelo real). |
 | `HF_HUB_OFFLINE` / `TRANSFORMERS_OFFLINE` | `1` por defecto en la imagen: no se descarga nada en el arranque. |
 
 ## Autenticación
@@ -300,46 +311,26 @@ de explicación vive en `xai.py`, que sí está probada. Lint: `ruff check` y `b
 
 ## CI/CD
 
-El pipeline sigue el de los servicios FastAPI de Centinela (`governance-service`,
-`analytics-service`, `ethical-recommender-service`): control de calidad en
-`ubuntu-latest`, cobertura ≥ 90 % y build de imagen, más un CD a staging al
-empujar `develop` y a producción al empujar `main`.
+Mismo pipeline que el resto de servicios FastAPI de Centinela (`governance-service`,
+`ethical-recommender-service`), sin excepciones:
 
 | Workflow | Cuándo | Qué hace |
 |---|---|---|
-| `ci.yml` | push a `develop`, PR a `develop`/`main` | Nombre de rama, `ruff`, `black`, `pytest` en modo mock, `docker compose config`, imagen sin CUDA y smoke test de `/health`. |
-| `cd-production.yml` | push a `main` | El mismo control de calidad y, si el deploy está habilitado, despliegue a producción. |
-| `add-to-project.yml` | issue abierto | Agrega el issue al Project de la organización si existe `ORG_PROJECT_TOKEN`. |
+| `ci.yml` | push a `develop`, PR a `develop`/`main` | Nombre de rama (workflow reusable de `PlataformaIntegradaInvestigadores/.github`), `ruff`, `black`, `pytest` con cobertura ≥ 90 %, `docker compose config` y build de la imagen. En push a `develop`, deploy a staging. |
+| `cd-production.yml` | push a `main` | El mismo control de calidad y deploy a producción. |
+| `add-to-project.yml` | issue abierto | Agrega el issue al Project de la organización. |
 
-Los jobs de deploy (`runs-on: [self-hosted, staging]` y `[self-hosted, production]`)
-están escritos como los de la organización: `git reset --hard` en
-`/opt/centinela/hatespeech-service`, `docker compose up -d --build` y rollback si
-`/health` no responde. **No se ejecutan** mientras la variable de repositorio
-`CENTINELA_DEPLOY_ENABLED` no sea `true`, así un repo sin los runners de la
-organización no deja el workflow en cola ni en rojo.
+Deploy (runner self-hosted `staging` / `production`): `git reset --hard` en
+`/opt/centinela/hatespeech-service`, `docker compose up -d --build --remove-orphans`, y
+rollback al commit anterior si `http://localhost:8008/health` no responde 200. El `.env`
+vive en el servidor (a partir de `.env.example` o `.env_produccion.example`), nunca en GitHub.
 
-Para activarlos hace falta:
+- **Staging (`ticcd`)**: sin GPU, corre la imagen sin CUDA con `MODEL_BACKEND=mock`.
+- **Producción**: requiere un host con GPU, los pesos del modelo en las rutas de
+  `MODELS_HOST_DIR`/`BASE_MODEL_HOST_DIR` y `COMPOSE_FILE` con el override de GPU.
 
-- Un runner self-hosted con etiqueta `staging` (push a `develop`) y otro con
-  etiqueta `production` (push a `main`). Los runners de
-  `PlataformaIntegradaInvestigadores` no están registrados en este repo.
-- El checkout del servidor en `/opt/centinela/hatespeech-service`, con `.env`
-  (a partir de `.env_produccion.example`) y los volúmenes del modelo. Esos
-  valores no son secrets de GitHub: viven en el host, igual que en los otros
-  servicios.
-- La variable de repositorio `CENTINELA_DEPLOY_ENABLED=true`.
-- `ORG_PROJECT_TOKEN` (PAT con acceso al Project de la organización) solo para
-  `add-to-project.yml`. Si falta, ese workflow termina en verde y no agrega el issue.
-
-Diferencias respecto del workflow de la org, a propósito:
-
-- El build de CI usa `INSTALL_GPU=false` y prueba `/health` en modo mock. No
-  descarga PyTorch CUDA ni los pesos.
-- La validación del nombre de rama está copiada en este repo (el workflow
-  reusable de la org no acepta el prefijo `cursor/` de los cloud agents, y
-  este repo no pertenece a la organización). Acepta `feature/*`, `chore/*` y
-  `cursor/*` hacia `develop`, y `hotfix/*` hacia `main`.
-- El healthcheck del deploy pega a `127.0.0.1:8008`, no a `8006`.
+Ramas: `feature/*` y `chore/*` → `develop`, `hotfix/*` → `main`, `develop` → `main` solo
+el release owner. Todo cambio entra por PR.
 
 ## Pendientes conocidos
 

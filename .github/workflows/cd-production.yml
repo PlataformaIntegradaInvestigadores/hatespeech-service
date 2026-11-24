@@ -4,17 +4,11 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: read
-
 jobs:
   # ── Control de calidad ────────────────────────────────────────────────────
   quality:
     name: Control de calidad
     runs-on: ubuntu-latest
-    env:
-      MODEL_BACKEND: mock
-      DATABASE_URL: "sqlite://"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
@@ -28,8 +22,9 @@ jobs:
       - name: black --check
         run: python -m black --check .
       - name: Ejecutar tests
-        # pyproject.toml ya fija --cov=app, el informe XML y --cov-fail-under=90.
-        run: python -m pytest --cov-report=term-missing --junitxml=report-prod.xml
+        run: |
+          python -m pytest --cov --cov-report=term-missing \
+            --cov-report=xml:coverage-prod.xml --junitxml=report-prod.xml
       - name: Subir resultados
         uses: actions/upload-artifact@v7
         if: always()
@@ -37,24 +32,17 @@ jobs:
           name: quality-results-prod
           path: |
             report-prod.xml
-            coverage.xml
+            coverage-prod.xml
       - name: Validar docker-compose.yml
         run: docker compose config --quiet
-      - name: Build de la imagen sin CUDA
-        run: docker build --build-arg INSTALL_GPU=false -t hatespeech-service:${{ github.sha }} .
+      - name: Build de la imagen
+        run: docker build -t hatespeech-service:${{ github.sha }} .
 
   # ── Deploy producción ────────────────────────────────────────────────────
-  # Igual que el staging de ci.yml: el job reproduce el CD de los otros
-  # servicios (runner self-hosted `production`, checkout en
-  # /opt/centinela/hatespeech-service, healthcheck y rollback) pero no se
-  # encola si falta la infraestructura. Activarlo exige la variable de
-  # repositorio CENTINELA_DEPLOY_ENABLED=true y un runner con esa etiqueta.
-  # El .env y los pesos del modelo viven en el servidor, no en GitHub.
   deploy-production:
     name: Deploy a servidor producción
     runs-on: [self-hosted, production]
     needs: quality
-    if: vars.CENTINELA_DEPLOY_ENABLED == 'true'
     steps:
       - name: Actualizar código
         run: |
@@ -69,10 +57,10 @@ jobs:
 
       - name: Health check con rollback automático
         run: |
-          sleep 15
+          sleep 10
           HEALTHY=false
           for i in 1 2 3 4 5; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://127.0.0.1:${HATESPEECH_PUBLISH_PORT:-8008}/health || echo "000")
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:8008/health || echo "000")
             echo "Intento $i: HTTP $STATUS"
             if [ "$STATUS" = "200" ]; then
               HEALTHY=true; break
