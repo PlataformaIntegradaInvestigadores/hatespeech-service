@@ -19,8 +19,8 @@ from __future__ import annotations
 import logging
 import threading
 
-from app.services.classifiers.base import ClassificationResult, HateSpeechClassifier
-from app.services.xai import normalizar, palabras, top_palabras
+from app.application.ports import ClassificationResult, HateSpeechClassifier
+from app.domain.xai import normalizar, palabras, top_palabras
 
 logger = logging.getLogger(__name__)
 

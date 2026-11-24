@@ -7,12 +7,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
 
+from app.adapters.outbound.persistence.database import (
+    build_engine,
+    build_sessionmaker,
+    create_schema,
+    ping,
+)
 from app.api.v1 import api_router
+from app.bootstrap import build_classifier
 from app.core.config import settings
-from app.core.database import Base, build_engine, build_sessionmaker
-from app.services.classifiers.factory import build_classifier
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +24,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     engine = build_engine(settings.DATABASE_URL)
-    # v1 sin migraciones: las tablas se crean al arrancar (idempotente).
-    Base.metadata.create_all(engine)
+    create_schema(engine)
     app.state.engine = engine
     app.state.sessionmaker = build_sessionmaker(engine)
 
@@ -95,8 +98,7 @@ def _db_ok() -> bool:
     if engine is None:
         return False
     try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
+        ping(engine)
         return True
     except Exception as exc:
         logger.error("Health check: base de datos no disponible: %s", exc)

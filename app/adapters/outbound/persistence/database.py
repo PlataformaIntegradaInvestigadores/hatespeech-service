@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
-
-from fastapi import Request
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-
-class Base(DeclarativeBase):
-    pass
+from app.adapters.outbound.persistence.orm import metadata
 
 
 def build_engine(url: str) -> Engine:
@@ -27,9 +22,12 @@ def build_sessionmaker(engine: Engine) -> sessionmaker[Session]:
     return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
-def get_db(request: Request) -> Iterator[Session]:
-    session = request.app.state.sessionmaker()
-    try:
-        yield session
-    finally:
-        session.close()
+def create_schema(engine: Engine) -> None:
+    # v1 sin migraciones: las tablas se crean al arrancar (idempotente).
+    metadata.create_all(engine)
+
+
+def ping(engine) -> None:
+    """Lanza la excepción del driver si la base no responde."""
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))

@@ -21,10 +21,10 @@ markers = [
 
 [tool.coverage.run]
 # El backend Qwen necesita torch + GPU; CI corre con MODEL_BACKEND=mock.
-# Su lógica pura (palabras, top-k) vive en app/services/xai.py y sí se cubre.
+# Su lógica pura (palabras, top-k) vive en app/domain/xai.py y sí se cubre.
 branch = true
 source = ["app"]
-omit = ["app/services/classifiers/qwen.py"]
+omit = ["app/adapters/outbound/classifiers/qwen.py"]
 
 [tool.coverage.report]
 fail_under = 90

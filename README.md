@@ -83,7 +83,7 @@ La inferencia reutiliza la lógica de los scripts de evaluación de la TIC:
   a los embeddings), agregada por palabra con `offset_mapping`. Si el gradiente falla, se usa
   oclusión (Δ `p_odio` al reemplazar cada token por padding). Se devuelven las `top_k` palabras.
 
-Código: `app/services/classifiers/qwen.py` (modelo) y `app/services/xai.py` (agregación por
+Código: `app/adapters/outbound/classifiers/qwen.py` (modelo) y `app/domain/xai.py` (agregación por
 palabra, probada sin GPU).
 
 ### Montar el modelo
@@ -159,11 +159,26 @@ los umbrales usados y la versión del modelo, y cada caso los guarda para audito
 
 ## Estructura del proyecto
 
+Arquitectura hexagonal ligera, la misma de `predictive-service`: el dominio y los casos de
+uso no importan FastAPI, Pydantic ni SQLAlchemy; los adaptadores implementan los puertos y
+`bootstrap.py` los conecta. `tests/test_architecture.py` hace cumplir esa regla.
+
 ```
 app/
-  api/
-    deps.py                    # Inyección de sesión, servicio y clasificador
-    serializers.py             # ORM → esquemas públicos
+  domain/                      # Núcleo puro (sin frameworks)
+    entities.py                # Caso, reporte y decisión (dataclasses)
+    policy.py                  # Reglas de umbrales
+    xai.py                     # Saliencia por palabra
+    errors.py                  # Errores de dominio
+  application/
+    ports.py                   # Puertos: clasificador, repositorio y configuración
+    moderation_service.py      # Casos de uso: clasificar, reportar, cola HITL, decidir
+  adapters/outbound/
+    classifiers/               # mock (dev/CI) y qwen (QLoRA en GPU)
+    persistence/               # Engine, tablas + mapeo imperativo y repositorio SQLAlchemy
+  api/                         # Adaptador de entrada HTTP
+    deps.py                    # Sesión por petición, servicio y clasificador
+    serializers.py             # Entidades → esquemas públicos
     v1/endpoints/
       classify.py              # POST /classify
       reports.py               # POST /reports
@@ -171,16 +186,10 @@ app/
       moderation_status.py     # Estado de un contenido
   core/
     config.py                  # Configuración por variables de entorno
-    database.py                # Engine y sesiones SQLAlchemy
     security.py                # API key interna, JWT y verificación de moderador
   models/
-    db.py                      # Tablas: casos, reportes, decisiones
-    schemas.py                 # Esquemas Pydantic
-  services/
-    classifiers/               # base, mock, qwen (QLoRA) y factory
-    moderation_service.py      # Casos de uso
-    policy.py                  # Reglas de umbrales (pura)
-    xai.py                     # Saliencia por palabra
+    schemas.py                 # Esquemas Pydantic (contrato HTTP)
+  bootstrap.py                 # Raíz de composición: elige e inyecta los adaptadores
   main.py                      # App, lifespan (BD + modelo) y /health
 tests/
 ```
@@ -294,7 +303,7 @@ pytest
 
 Corre con el backend `mock` y SQLite en memoria (ver `conftest.py`); no necesita GPU ni
 Postgres. La cobertura mínima es **90 %** (`--cov-fail-under=90` en `pyproject.toml`).
-`app/services/classifiers/qwen.py` se excluye de la cobertura porque requiere CUDA; su lógica
+`app/adapters/outbound/classifiers/qwen.py` se excluye de la cobertura porque requiere CUDA; su lógica
 de explicación vive en `xai.py`, que sí está probada. Lint: `ruff check` y `black --check`
 (línea de 100), con las versiones de `requirements-dev.txt`.
 

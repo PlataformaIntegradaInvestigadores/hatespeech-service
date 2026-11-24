@@ -1,16 +1,14 @@
 import pytest
 
-from app.services.moderation_service import (
-    CaseNotFoundError,
-    ModerationService,
-    SelfReportError,
-)
+from app.adapters.outbound.persistence.repository import SqlAlchemyModerationRepository
+from app.application.moderation_service import ModerationService
+from app.domain.errors import CaseNotFoundError, SelfReportError
 from tests.conftest import BANDA, DUDOSO, NEUTRAL, ODIO
 
 
 @pytest.fixture
 def svc(db, settings):
-    return ModerationService(db, settings)
+    return ModerationService(SqlAlchemyModerationRepository(db), settings)
 
 
 def test_neutral_queda_visible_sin_revision(svc, classifier):
@@ -179,6 +177,8 @@ def test_franja_y_reportes_se_acumulan(svc, classifier):
 
 def test_franja_desactivable(db, classifier, settings):
     off = settings.model_copy(update={"REVIEW_BAND_ENABLED": False})
-    case, _ = ModerationService(db, off).classify(classifier, BANDA, "comment", "33")
+    case, _ = ModerationService(SqlAlchemyModerationRepository(db), off).classify(
+        classifier, BANDA, "comment", "33"
+    )
     assert (case.visibility, case.review_status, case.reasons) == ("visible", "none", [])
     assert case.thresholds["review_band_min"] is None
